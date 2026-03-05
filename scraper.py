@@ -21,6 +21,9 @@ import requests
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Page, TimeoutError as PWTimeout
+import sqlite3
+import hashlib
+import argparse
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
@@ -302,97 +305,201 @@ def process(raw: list) -> list:
 
         rows.append({
             "titre": titre,
-            "prix": f"{prix:.0f}" if prix is not None else "",
-            "superficie": f"{superficie:.0f}" if superficie is not None else "",
-            "prix_m2": f"{prix_m2:.2f}" if prix_m2 is not None else "",
+            "prix": prix,
+            "superficie": superficie,
+            "prix_m2": prix_m2,
             "trajet": trajet,
             "lien": lien,
         })
     return rows
 
 
-def export_csv(rows: list, path: str):
-    fields = [
-        "titre",
-        "prix (€)",
-        "superficie (m²)",
-        "prix au m² (€/m²)",
-        "temps trajet Toulouse",
-        "lien",
-    ]
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=fields, delimiter=";")
-        w.writeheader()
-        for r in rows:
-            w.writerow({
-                "titre": r["titre"],
-                "prix (€)": r["prix"],
-                "superficie (m²)": r["superficie"],
-                "prix au m² (€/m²)": r["prix_m2"],
-                "temps trajet Toulouse": r["trajet"],
-                "lien": r["lien"],
-            })
-    abs_path = Path(path).resolve()
-    print(f"\n✓ {len(rows)} annonces → {abs_path}")
 
+def generate_unique_key(annonce):
+    """
+    Génère une clé unique pour une annonce basée sur son titre, prix et localisation.
+
+    :param annonce: Dictionnaire contenant les données de l'annonce.
+    :return: Clé unique sous forme de chaîne hexadécimale.
+    """
+    return hashlib.md5(annonce.get('lien', '').encode('utf-8')).hexdigest()
+
+
+def save_to_database(data, db_name="lbc_data.db"):
+    """
+    Enregistre les données extraites dans une base de données SQLite.
+
+    :param data: Liste de dictionnaires contenant les données des annonces.
+    :param db_name: Nom du fichier de la base de données SQLite.
+    """
+    # Connexion à la base de données (ou création si elle n'existe pas)
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+
+    # Création de la table si elle n'existe pas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS annonces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titre TEXT,
+            prix REAL,
+            superficie REAL,
+            prix_m2 REAL,
+            trajet TEXT,
+            lien TEXT,
+            unique_key TEXT UNIQUE
+        )
+    ''')
+
+    # Insertion des données dans la table
+    for annonce in data:
+        unique_key = generate_unique_key(annonce)
+        try:
+            cursor.execute('''
+                INSERT INTO annonces (titre, prix, superficie, prix_m2, trajet, lien, unique_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                annonce.get("titre"),
+                annonce.get("prix"),
+                annonce.get("superficie"),
+                annonce.get("prix_m2"),
+                annonce.get("trajet"),
+                annonce.get("lien"),
+                unique_key
+            ))
+        except sqlite3.IntegrityError:
+            # Ignorer les doublons basés sur la clé unique
+            print(f"Annonce déjà existante : {unique_key}")
+
+    # Sauvegarde des changements et fermeture de la connexion
+    conn.commit()
+    conn.close()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Export vers CSV
+# ──────────────────────────────────────────────────────────────────────────────
+
+def export_to_csv(db_name="lbc_data.db", csv_file="output.csv"):
+    """
+    Exporte les données de la base SQLite vers un fichier CSV.
+
+    :param db_name: Nom du fichier de la base de données SQLite.
+    :param csv_file: Nom du fichier CSV de sortie.
+    """
+    # Connexion à la base de données
+    conn = sqlite3.connect(db_name)
+    cursor = conn.cursor()
+
+    # Récupération des données de la table
+    cursor.execute("SELECT titre, prix, superficie, prix_m2, trajet, lien FROM annonces")
+    rows = cursor.fetchall()
+
+    def fmt(val):
+        """Formate un nombre en remplaçant le point décimal par une virgule."""
+        if val is None:
+            return ""
+        if isinstance(val, float):
+            return str(val).replace(".", ",")
+        return val
+
+    # Écriture dans le fichier CSV
+    with open(csv_file, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file, delimiter=";")
+        # Écriture de l'en-tête
+        writer.writerow(["Titre", "Prix (€)", "Superficie (m²)", "Prix au m² (€/m²)", "Temps trajet Toulouse", "Lien"])
+        # Écriture des lignes avec formatage des nombres
+        for row in rows:
+            writer.writerow([fmt(v) for v in row])
+
+    print(f"Données exportées vers le fichier {csv_file}.")
+
+    # Fermeture de la connexion
+    conn.close()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
+    """
+    Point d'entrée principal du script.
+    """
+    parser = argparse.ArgumentParser(
+        description="Scraper Leboncoin – Terrains constructibles.",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "--scrape",
+        action="store_true",
+        help="Lance le scraping et sauvegarde les nouvelles annonces en base.",
+    )
+    parser.add_argument(
+        "--export-csv",
+        action="store_true",
+        help="Exporte les données de la base SQLite vers un fichier CSV.",
+    )
+    args = parser.parse_args()
+
+    if not args.scrape and not args.export_csv:
+        parser.print_help()
+        return
+
     print("=" * 60)
     print("  Leboncoin – Terrains constructibles (rayon 100km Toulouse)")
     print("=" * 60)
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=False,   # visible → meilleure chance de passer DataDome
-            slow_mo=120,      # chaque action Playwright prend 120ms minimum
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        ctx = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            locale="fr-FR",
-            timezone_id="Europe/Paris",
-        )
-        page = ctx.new_page()
+    if args.scrape:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=False,   # visible → meilleure chance de passer DataDome
+                slow_mo=120,      # chaque action Playwright prend 120ms minimum
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            ctx = browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                locale="fr-FR",
+                timezone_id="Europe/Paris",
+            )
+            page = ctx.new_page()
 
-        # Masque la propriété webdriver
-        page.add_init_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
+            # Masque la propriété webdriver
+            page.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
 
-        print("\n[1/3] Récupération des annonces...")
-        raw = get_all_ads(page)
-        browser.close()
+            print("\n[1/2] Récupération des annonces...")
+            raw = get_all_ads(page)
+            browser.close()
 
-    if not raw:
-        print(
-            "\n✗ Aucune annonce récupérée.\n"
-            "  Causes possibles :\n"
-            "  • IP bloquée par DataDome (fréquent sur IPs datacenter/VPN)\n"
-            "  • Désactivez VPN/proxy et relancez depuis votre réseau personnel\n"
-            "  • Consultez debug_blocked.png si présent"
-        )
-        return
+        if not raw:
+            print(
+                "\n✗ Aucune annonce récupérée.\n"
+                "  Causes possibles :\n"
+                "  • IP bloquée par DataDome (fréquent sur IPs datacenter/VPN)\n"
+                "  • Désactivez VPN/proxy et relancez depuis votre réseau personnel\n"
+                "  • Consultez debug_blocked.png si présent"
+            )
+            return
 
-    print(f"\n[2/3] Calcul temps de trajet Toulouse ({len(raw)} annonces)...")
-    rows = process(raw)
+        print(f"\n[2/2] Calcul temps de trajet Toulouse ({len(raw)} annonces)...")
+        rows = process(raw)
 
-    print("\n[3/3] Export CSV...")
-    export_csv(rows, OUTPUT_CSV)
+        print("\nSauvegarde en base de données...")
+        save_to_database(rows)
 
-    print(f"\n{'='*60}")
-    print(f"  Total annonces    : {len(rows)}")
-    print(f"  Avec superficie   : {sum(1 for r in rows if r['superficie'])}")
-    print(f"  Avec trajet calc. : {sum(1 for r in rows if r['trajet'] != 'N/A')}")
-    print(f"{'='*60}")
+        print(f"\n{'='*60}")
+        print(f"  Total annonces    : {len(rows)}")
+        print(f"  Avec superficie   : {sum(1 for r in rows if r['superficie'])}")
+        print(f"  Avec trajet calc. : {sum(1 for r in rows if r['trajet'] != 'N/A')}")
+        print(f"{'='*60}")
+
+    if args.export_csv:
+        csv_file = f"terrains_leboncoin_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        export_to_csv(csv_file=csv_file)
 
 
 if __name__ == "__main__":
