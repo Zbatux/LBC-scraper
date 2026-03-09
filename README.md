@@ -1,57 +1,74 @@
 # LBC Scraper
 
-## Description
-Ce projet est un scraper conçu pour extraire des données depuis le site Leboncoin (LBC). Il utilise Python pour envoyer des requêtes HTTP, analyser les réponses, et extraire les informations pertinentes des annonces publiées sur le site.
-
-## Fonctionnalités principales
-- Envoi de requêtes HTTP pour récupérer les pages web.
-- Analyse du contenu HTML pour extraire les données des annonces.
-- Gestion des dépendances via un fichier `requirements.txt`.
-
-## Structure du projet
-- `scraper.py` :
-  - Contient le code principal pour effectuer le scraping.
-  - Utilise des bibliothèques comme `requests` pour les requêtes HTTP et `BeautifulSoup` pour l'analyse HTML.
-  - Implémente une logique pour parcourir les pages, extraire les données des annonces (titre, prix, localisation, etc.) et les sauvegarder dans un format structuré (par exemple, JSON ou CSV).
-- `requirements.txt` :
-  - Liste les bibliothèques Python nécessaires pour exécuter le projet, telles que `requests` et `beautifulsoup4`.
+Scraper de terrains constructibles sur Leboncoin (rayon 100 km autour de Toulouse).
+Utilise **Playwright** pour contourner la protection DataDome, calcule le temps de trajet
+via **OSRM** (gratuit, sans clé API), stocke tout dans **SQLite**, enrichit les annonces
+par analyse IA locale avec **Ollama** et propose une **interface web** (Flask) pour éditer,
+filtrer et annoter les annonces.
 
 ## Prérequis
-- Python 3.8 ou une version ultérieure.
-- Les bibliothèques listées dans `requirements.txt` doivent être installées. Vous pouvez les installer avec la commande suivante :
 
 ```bash
 pip install -r requirements.txt
+python -m playwright install chromium
+ollama pull gemma3:12b   # uniquement pour --analyze
 ```
 
-## Utilisation
-1. Assurez-vous que toutes les dépendances sont installées.
-2. Exécutez le fichier `scraper.py` pour démarrer le scraping :
+Python 3.10+ requis (annotations `X | Y`).
+
+## Usage
 
 ```bash
-python scraper.py
+# 1. Scraper les annonces et calculer les trajets
+python main.py --scrape
+
+# 2. Récupérer les descriptions complètes des annonces
+python main.py --get-description
+
+# 3. Analyser les descriptions avec le LLM local
+python main.py --analyze
+
+# 4. Exporter en CSV
+python main.py --export-csv
+
+# 5. Lancer l'interface web d'édition (http://localhost:5000)
+python main.py --web
 ```
-3. Les données extraites seront sauvegardées dans un fichier de sortie (par exemple, `output.json` ou `output.csv`) dans le répertoire du projet.
 
-## Arguments disponibles
+Les étapes 1 à 4 sont indépendantes et cumulatives. L'ordre recommandé est 1 → 2 → 3 → 4.
+L'étape 5 peut être lancée à tout moment pour consulter et éditer la base.
 
-Le script `scraper.py` accepte les arguments suivants :
+## Arguments
 
-- `--scrape` : Lance le processus de scraping et sauvegarde les nouvelles annonces dans la base SQLite.
-- `--export-csv` : Exporte les données de la base SQLite vers un fichier CSV.
+| Argument            | Description                                                                 |
+|---------------------|-----------------------------------------------------------------------------|
+| `--scrape`          | Scrape Leboncoin et enregistre les nouvelles annonces dans `lbc_data.db`   |
+| `--get-description` | Visite chaque annonce sans description et récupère son texte complet        |
+| `--analyze`         | Analyse les descriptions via Ollama et remplit les champs IA (viabilisé…)  |
+| `--export-csv`      | Exporte toutes les données de la base vers un fichier CSV horodaté         |
+| `--web`             | Lance l'interface web d'édition sur `http://localhost:5000`                |
 
-## Détails techniques
-- **Requêtes HTTP** :
-  - Le module `requests` est utilisé pour envoyer des requêtes GET aux pages du site.
-  - Les en-têtes HTTP peuvent être personnalisés pour imiter un navigateur web.
-- **Analyse HTML** :
-  - Le module `BeautifulSoup` de la bibliothèque `beautifulsoup4` est utilisé pour analyser le contenu HTML des pages récupérées.
-  - Les sélecteurs CSS ou XPath sont utilisés pour localiser les éléments pertinents dans le DOM (Document Object Model).
-- **Gestion des erreurs** :
-  - Le code inclut des mécanismes pour gérer les erreurs réseau (par exemple, les délais d'attente ou les codes d'erreur HTTP).
-  - Une logique de réessai peut être implémentée pour les requêtes échouées.
-- **Sauvegarde des données** :
-  - Les données extraites sont formatées et sauvegardées dans des fichiers JSON ou CSV pour une utilisation ultérieure.
+## Structure du projet
+
+```
+main.py            Point d'entrée CLI
+config.py          Constantes (URL de recherche, coordonnées Toulouse…)
+parsers.py         Extraction des champs depuis les objets JSON Leboncoin
+routing.py         Calcul du temps de trajet Toulouse via OSRM
+browser.py         Pilotage Playwright (scraping, anti-bot)
+database.py        Persistance SQLite + déduplication
+descriptions.py    Récupération des descriptions complètes
+analyzer.py        Analyse IA locale (Ollama / gemma3:12b)
+exporter.py        Export CSV
+web.py             Serveur Flask — interface web d'édition
+templates/
+  index.html       Interface HTML/JS d'édition des annonces
+lbc_data.db        Base SQLite générée à l'exécution
+```
+
+Pour une description détaillée de l'architecture, des dépendances entre modules et du
+schéma de base de données, voir [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Avertissement
-L'utilisation de ce scraper doit respecter les conditions d'utilisation du site Leboncoin. Assurez-vous d'avoir l'autorisation avant de scraper des données.
+
+L'utilisation de ce scraper doit respecter les conditions d'utilisation du site Leboncoin.
