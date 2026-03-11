@@ -13,3 +13,6 @@ SEARCH_URL = (
 )
 
 MAX_PAGES = 30  # ~35 annonces/page → 30 pages = 1050 annonces max
+
+GPS_MATCH_THRESHOLD_M = 50         # metres — fuzzy GPS proximity threshold
+AREA_MATCH_THRESHOLD_PCT = 0.10    # 10% — relative area difference threshold

@@ -41,7 +41,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   epic-1: in-progress
-  1-1-fuzzy-matcher-module: ready-for-dev
+  1-1-fuzzy-matcher-module: done
   1-2-database-schema-migration: backlog
   1-3-parser-enrichment: backlog
   1-4-save-or-merge-integration: backlog

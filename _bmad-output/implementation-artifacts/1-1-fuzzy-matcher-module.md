@@ -1,6 +1,6 @@
 # Story 1.1: Fuzzy Matcher Module
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -42,20 +42,20 @@ so that GPS+area identity matching can be reused, independently tested, and tune
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add matcher threshold constants to config.py (AC: #4)
-  - [ ] Add `GPS_MATCH_THRESHOLD_M = 50` after existing constants
-  - [ ] Add `AREA_MATCH_THRESHOLD_PCT = 0.10` after GPS constant
-- [ ] Task 2: Create matcher.py with haversine implementation (AC: #1, #3)
-  - [ ] Implement `_haversine(lat1, lng1, lat2, lng2) -> float` returning metres
-  - [ ] Implement `find_match(lat, lng, area, candidates) -> int | None`
-  - [ ] Use `config.GPS_MATCH_THRESHOLD_M` and `config.AREA_MATCH_THRESHOLD_PCT` for thresholds
-- [ ] Task 3: Implement NULL/malformed data guards (AC: #2)
-  - [ ] Return `None` immediately if `lat`, `lng`, or `area` is `None`
-  - [ ] Return `None` immediately if any value fails numeric validation
-  - [ ] Skip candidates with missing `lat`, `lng`, or `superficie`
-- [ ] Task 4: Verify import constraints (AC: #5)
-  - [ ] Only `import math` and `import config` at top of matcher.py
-  - [ ] No `sqlite3`, `flask`, `requests`, or any pip-installed package
+- [x] Task 1: Add matcher threshold constants to config.py (AC: #4)
+  - [x] Add `GPS_MATCH_THRESHOLD_M = 50` after existing constants
+  - [x] Add `AREA_MATCH_THRESHOLD_PCT = 0.10` after GPS constant
+- [x] Task 2: Create matcher.py with haversine implementation (AC: #1, #3)
+  - [x] Implement `_haversine(lat1, lng1, lat2, lng2) -> float` returning metres
+  - [x] Implement `find_match(lat, lng, area, candidates) -> int | None`
+  - [x] Use `config.GPS_MATCH_THRESHOLD_M` and `config.AREA_MATCH_THRESHOLD_PCT` for thresholds
+- [x] Task 3: Implement NULL/malformed data guards (AC: #2)
+  - [x] Return `None` immediately if `lat`, `lng`, or `area` is `None`
+  - [x] Return `None` immediately if any value fails numeric validation
+  - [x] Skip candidates with missing `lat`, `lng`, or `superficie`
+- [x] Task 4: Verify import constraints (AC: #5)
+  - [x] Only `import math` and `import config` at top of matcher.py
+  - [x] No `sqlite3`, `flask`, `requests`, or any pip-installed package
 
 ## Dev Notes
 
@@ -150,8 +150,24 @@ AREA_MATCH_THRESHOLD_PCT = 0.10    # 10% — relative area difference threshold
 
 ### Agent Model Used
 
+claude-sonnet-4-6
+
 ### Debug Log References
+
+None — implementation was straightforward.
 
 ### Completion Notes List
 
+- Added `GPS_MATCH_THRESHOLD_M = 50` and `AREA_MATCH_THRESHOLD_PCT = 0.10` to `config.py` after `MAX_PAGES`.
+- Created `matcher.py` at project root with `_haversine()` (standard haversine, stdlib math only) and `find_match()` implementing the exact architecture contract interface.
+- NULL/malformed guards: immediate `None` return if caller args are None/non-numeric; bad candidates are silently skipped.
+- Import constraint verified via AST parse: only `math` and `config`.
+- 25 pytest tests covering AC1–AC5: positive match, NULL handling (13 cases), no-match thresholds, config constants, import smoke.
+- All 25 tests pass in 0.08s, zero regressions.
+
 ### File List
+
+- `config.py` — added 2 constants at end of file
+- `matcher.py` — new file (project root)
+- `tests/test_matcher.py` — new file (25 tests)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — status updated to `review`
