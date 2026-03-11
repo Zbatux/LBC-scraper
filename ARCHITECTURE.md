@@ -1,41 +1,41 @@
-# Architecture du projet LBC Scraper
+# LBC Scraper Project Architecture
 
-## Vue d'ensemble
+## Overview
 
-Pipeline en 4 étapes pour extraire, enrichir et analyser des annonces Leboncoin,
-plus une interface web locale pour les éditer :
+4-step pipeline to extract, enrich, and analyze Leboncoin listings,
+plus a local web interface for editing:
 
 ```
 Leboncoin  ──(Playwright)──▶  SQLite  ──(Playwright)──▶  Ollama  ──▶  CSV
- (scraping)                  (stockage)   (descriptions)   (analyse IA)  (export)
+ (scraping)                  (storage)   (descriptions)   (AI analysis)  (export)
                                 ▲
-                             Flask ──▶ Interface web
+                             Flask ──▶ Web interface
                               (--web)
 ```
 
-Chaque étape est indépendante et se déclenche via un argument CLI dans `main.py`.
+Each step is independent and triggered via a CLI argument in `main.py`.
 
 ---
 
-## Structure des modules
+## Module Structure
 
-| Fichier                | Rôle                                              | Symboles clés                                                  |
-|------------------------|---------------------------------------------------|----------------------------------------------------------------|
-| `config.py`            | Constantes globales                               | `TOULOUSE_LAT`, `TOULOUSE_LNG`, `SEARCH_URL`, `MAX_PAGES`     |
-| `parsers.py`           | Extraction des champs depuis les objets JSON LBC  | `parse_price`, `parse_area`, `get_coords`, `get_attr`, `build_url` |
-| `routing.py`           | Calcul du temps de trajet vers Toulouse via OSRM  | `drive_time`, `_sess`                                          |
-| `browser.py`           | Pilotage Playwright (scraping, anti-bot)          | `get_all_ads`, `scrape_page`, `accept_cookies`, `human_scroll` |
-| `database.py`          | Persistance SQLite + calcul des trajets           | `save_to_database`, `process`, `generate_unique_key`           |
-| `descriptions.py`      | Visite des pages annonces pour récupérer le texte | `fetch_all_descriptions`, `fetch_description`                  |
-| `analyzer.py`          | Analyse IA locale des descriptions (Ollama)       | `analyze_all`, `analyze_description`, `OLLAMA_MODEL`           |
-| `exporter.py`          | Export CSV depuis la base SQLite                  | `export_to_csv`                                                |
-| `web.py`               | Serveur Flask — API REST + service des templates  | `app`, `get_annonces`, `delete_annonces`, `bulk_update`, `update_annonce`, `EDITABLE_FIELDS` |
-| `templates/index.html` | Interface HTML/JS d'édition des annonces          | tableau interactif, filtres, actions bulk, édition inline      |
-| `main.py`              | Point d'entrée CLI (argparse)                     | `main`                                                         |
+| File                  | Role                                              | Key Symbols                                                  |
+|-----------------------|---------------------------------------------------|-------------------------------------------------------------|
+| `config.py`           | Global constants                                 | `TOULOUSE_LAT`, `TOULOUSE_LNG`, `SEARCH_URL`, `MAX_PAGES`   |
+| `parsers.py`          | Field extraction from LBC JSON objects           | `parse_price`, `parse_area`, `get_coords`, `get_attr`, `build_url` |
+| `routing.py`          | Travel time calculation to Toulouse via OSRM     | `drive_time`, `_sess`                                       |
+| `browser.py`          | Playwright automation (scraping, anti-bot)       | `get_all_ads`, `scrape_page`, `accept_cookies`, `human_scroll` |
+| `database.py`         | SQLite persistence + travel time calculation     | `save_to_database`, `process`, `generate_unique_key`        |
+| `descriptions.py`     | Visits listing pages to retrieve text            | `fetch_all_descriptions`, `fetch_description`               |
+| `analyzer.py`         | Local AI analysis of descriptions (Ollama)       | `analyze_all`, `analyze_description`, `OLLAMA_MODEL`        |
+| `exporter.py`         | CSV export from SQLite database                  | `export_to_csv`                                             |
+| `web.py`              | Flask server — REST API + template service       | `app`, `get_annonces`, `delete_annonces`, `bulk_update`, `update_annonce`, `EDITABLE_FIELDS` |
+| `templates/index.html`| HTML/JS interface for editing listings           | interactive table, filters, bulk actions, inline editing    |
+| `main.py`             | CLI entry point (argparse)                       | `main`                                                      |
 
 ---
 
-## Diagramme des dépendances
+## Dependency Diagram
 
 ```
 config.py
@@ -58,96 +58,96 @@ exporter.py   ──┘
 config.py     ──┘
 ```
 
-Aucune dépendance circulaire.
+No circular dependencies.
 
 ---
 
-## Flux de données détaillé
+## Detailed Data Flow
 
-### Étape 1 — `--scrape`
-1. Playwright ouvre Chromium (mode visible, `slow_mo=120ms`)
-2. Navigation sur `SEARCH_URL` page par page (max `MAX_PAGES`)
-3. Extraction depuis `__NEXT_DATA__` (JSON embarqué Next.js) avec fallback DOM
-4. `parsers.py` extrait : titre, prix, superficie, coordonnées GPS
-5. `routing.py` calcule le temps de trajet Toulouse via OSRM (API publique)
-6. `database.py` insère les nouvelles annonces dans `lbc_data.db` (dédoublonnage par `unique_key`)
+### Step 1 — `--scrape`
+1. Playwright opens Chromium (visible mode, `slow_mo=120ms`)
+2. Navigates `SEARCH_URL` page by page (max `MAX_PAGES`)
+3. Extracts from `__NEXT_DATA__` (embedded Next.js JSON) with DOM fallback
+4. `parsers.py` extracts: title, price, area, GPS coordinates
+5. `routing.py` calculates travel time to Toulouse via OSRM (public API)
+6. `database.py` inserts new listings into `lbc_data.db` (deduplication by `unique_key`)
 
-### Étape 2 — `--get-description`
-1. SQLite : sélection des annonces sans description
-2. Playwright visite chaque page d'annonce
-3. Clic automatique sur "Voir la suite" si présent
-4. Mise à jour de la colonne `description` en base
+### Step 2 — `--get-description`
+1. SQLite: selects listings without descriptions
+2. Playwright visits each listing page
+3. Automatically clicks "See more" if present
+4. Updates the `description` column in the database
 
-### Étape 3 — `--analyze`
-1. SQLite : sélection des annonces avec description et `analyse_faite = 0`
-2. Chaque description est envoyée à Ollama (`gemma3:12b`, température 0)
-3. Le LLM retourne un JSON structuré (viabilisé, emprise au sol, constructibilité partielle)
-4. Mise à jour des colonnes IA en base (`viabilise`, `emprise_sol`, `partiellement_constructible`, `partiellement_agricole`)
+### Step 3 — `--analyze`
+1. SQLite: selects listings with descriptions and `analyse_faite = 0`
+2. Each description is sent to Ollama (`gemma3:12b`, temperature 0)
+3. The LLM returns a structured JSON (serviced, ground coverage, partial constructibility)
+4. Updates AI columns in the database (`viabilise`, `emprise_sol`, `partiellement_constructible`, `partiellement_agricole`)
 
-### Étape 4 — `--export-csv`
-1. Lecture de toutes les colonnes depuis SQLite
-2. Écriture CSV (séparateur `;`, encoding UTF-8) avec formatage FR (virgule décimale, Oui/Non)
-3. Colonnes incluses : titre, prix, superficie, prix_m2, trajet, lien, viabilisé, emprise au sol, partiellement constructible, partiellement agricole, **nogo**, **note**
+### Step 4 — `--export-csv`
+1. Reads all columns from SQLite
+2. Writes CSV (delimiter `;`, UTF-8 encoding) with FR formatting (decimal comma, Yes/No)
+3. Included columns: title, price, area, price_m2, travel time, link, serviced, ground coverage, partially constructible, partially agricultural, **nogo**, **note**
 
-### Étape 5 — `--web`
-1. `main.py` importe et démarre le serveur Flask (`web.py`) sur `127.0.0.1:5000`
-2. Le navigateur par défaut est ouvert automatiquement via `webbrowser.open`
-3. Le serveur expose 5 endpoints REST :
+### Step 5 — `--web`
+1. `main.py` imports and starts the Flask server (`web.py`) on `127.0.0.1:5000`
+2. The default browser is automatically opened via `webbrowser.open`
+3. The server exposes 5 REST endpoints:
 
-   | Méthode   | Route                    | Corps / Paramètres                          | Action                              |
-   |-----------|--------------------------|---------------------------------------------|-------------------------------------|
-   | `GET`     | `/`                      | —                                           | Sert `templates/index.html`         |
-   | `GET`     | `/api/annonces`          | —                                           | Retourne toutes les annonces en JSON |
-   | `DELETE`  | `/api/annonces`          | `{ ids: [int, …] }`                         | Suppression bulk                    |
-   | `PATCH`   | `/api/annonces/bulk`     | `{ ids, field, value: 0 1 }`                | Toggle booléen en bulk              |
-   | `PATCH`   | `/api/annonces/<id>`     | `{ note?: int, nogo?: 0 1, … }`             | Mise à jour partielle d'une ligne   |
+   | Method    | Route                    | Body / Parameters                          | Action                              |
+   |-----------|--------------------------|--------------------------------------------|-------------------------------------|
+   | `GET`     | `/`                      | —                                          | Serves `templates/index.html`       |
+   | `GET`     | `/api/annonces`          | —                                          | Returns all listings in JSON        |
+   | `DELETE`  | `/api/annonces`          | `{ ids: [int, …] }`                        | Bulk deletion                       |
+   | `PATCH`   | `/api/annonces/bulk`     | `{ ids, field, value: 01 }`               | Bulk boolean toggle                 |
+   | `PATCH`   | `/api/annonces/<id>`     | `{ note?: int, nogo?: 01, … }`            | Partial row update                  |
 
-4. **Sécurité** : la constante `EDITABLE_FIELDS` définit la whitelist des colonnes éditables
+4. **Security**: the constant `EDITABLE_FIELDS` defines the whitelist of editable columns
    (`note`, `nogo`, `viabilise`, `partiellement_constructible`, `partiellement_agricole`).
-   Tout autre nom de colonne transmis par le client est rejeté avec `400` avant d'être
-   interpôlé dans une requête SQL, prévenant toute injection via nom de colonne.
+   Any other column name sent by the client is rejected with `400` before being
+   interpolated into an SQL query, preventing injection via column names.
 
-5. L'interface HTML (JS vanilla, sans build step) :
-   - Charge la liste initiale via `GET /api/annonces`
-   - Maintient un tableau local `allData` pour le filtrage/tri côté client (sans rechargement)
-   - Envoie un `PATCH /api/annonces/<id>` à chaque édition de `note` ou toggle de `nogo`
-   - Envoie un `PATCH /api/annonces/bulk` pour les actions sélection multiple
-   - Envoie un `DELETE /api/annonces` avec la liste des ids sélectionnés
-
----
-
-## Schéma de la base de données (`lbc_data.db`)
-
-Table : `annonces`
-
-| Colonne                        | Type    | Description                                         |
-|-------------------------------|---------|-----------------------------------------------------|
-| `id`                          | INTEGER | Clé primaire auto-incrémentée                       |
-| `titre`                       | TEXT    | Titre de l'annonce                                  |
-| `prix`                        | REAL    | Prix en €                                           |
-| `superficie`                  | REAL    | Surface en m²                                       |
-| `prix_m2`                     | REAL    | Prix au m² calculé                                  |
-| `trajet`                      | TEXT    | Temps de trajet vers Toulouse (ex: `1h 23min`)      |
-| `lien`                        | TEXT    | URL de l'annonce                                    |
-| `unique_key`                  | TEXT    | MD5(titre\|superficie) — contrainte UNIQUE          |
-| `description`                 | TEXT    | Texte complet de l'annonce (rempli par `--get-description`) |
-| `viabilise`                   | INTEGER | 0/1/NULL — issu de l'analyse IA                     |
-| `emprise_sol`                 | REAL    | % d'emprise au sol (100.0 si non mentionné)         |
-| `partiellement_constructible` | INTEGER | 0/1/NULL — issu de l'analyse IA                     |
-| `partiellement_agricole`      | INTEGER | 0/1/NULL — issu de l'analyse IA                     |
-| `analyse_faite`               | INTEGER | 0/1 — flag de traitement IA                         |
-| `nogo`                        | INTEGER | 0/1 — annonce à ignorer (défini manuellement)       |
-| `note`                        | INTEGER | 1–10 — note manuelle de l'annonce                   |
+5. The HTML interface (vanilla JS, no build step):
+   - Loads the initial list via `GET /api/annonces`
+   - Maintains a local `allData` table for client-side filtering/sorting (no reloads)
+   - Sends a `PATCH /api/annonces/<id>` for each `note` edit or `nogo` toggle
+   - Sends a `PATCH /api/annonces/bulk` for bulk actions on selected items
+   - Sends a `DELETE /api/annonces` with the list of selected IDs
 
 ---
 
-## Choix techniques
+## Database Schema (`lbc_data.db`)
 
-| Technologie | Raison du choix |
-|---|---|
-| **Playwright** (vs `requests`) | Leboncoin utilise DataDome (protection anti-bot). Playwright simule un vrai navigateur avec défilement aléatoire, pauses humaines et masquage de `webdriver`. |
-| **OSRM** (vs Google Maps API) | API publique gratuite, sans clé, pour le calcul d'itinéraires routiers. |
-| **Ollama** (vs API cloud) | Inférence 100% locale — pas de coût, pas de fuite de données, déterministe (`temperature=0`). |
-| **SQLite** (vs fichiers CSV) | Dédoublonnage natif (`UNIQUE`), migrations incrémentales, requêtes SQL pour le filtrage. |
-| **`__NEXT_DATA__`** | Leboncoin est une app Next.js : les données structurées sont injectées dans le DOM en JSON, plus fiable que le scraping HTML. |
-| **Flask** (vs FastAPI, Streamlit) | Minimal et sans dépendances lourdes pour un outil local. Sert l'UI en une seule route et expose 5 endpoints REST simples. Pas de build step, pas de rechargement de page : le JS gère le filtrage/tri côté client. |
+Table: `annonces`
+
+| Column                        | Type    | Description                                         |
+|-------------------------------|---------|---------------------------------------------------|
+| `id`                          | INTEGER | Auto-incremented primary key                      |
+| `titre`                       | TEXT    | Listing title                                      |
+| `prix`                        | REAL    | Price in €                                         |
+| `superficie`                  | REAL    | Area in m²                                         |
+| `prix_m2`                     | REAL    | Calculated price per m²                           |
+| `trajet`                      | TEXT    | Travel time to Toulouse (e.g., `1h 23min`)        |
+| `lien`                        | TEXT    | Listing URL                                        |
+| `unique_key`                  | TEXT    | MD5(title|area) — UNIQUE constraint               |
+| `description`                 | TEXT    | Full listing text (filled by `--get-description`) |
+| `viabilise`                   | INTEGER | 0/1/NULL — from AI analysis                       |
+| `emprise_sol`                 | REAL    | Ground coverage % (100.0 if not mentioned)        |
+| `partiellement_constructible` | INTEGER | 0/1/NULL — from AI analysis                       |
+| `partiellement_agricole`      | INTEGER | 0/1/NULL — from AI analysis                       |
+| `analyse_faite`               | INTEGER | 0/1 — AI processing flag                          |
+| `nogo`                        | INTEGER | 0/1 — manually ignored listing                    |
+| `note`                        | INTEGER | 1–10 — manual listing rating                      |
+
+---
+
+## Technical Choices
+
+| Technology | Reason for Choice |
+|------------|--------------------|
+| **Playwright** (vs `requests`) | Leboncoin uses DataDome (anti-bot protection). Playwright simulates a real browser with random scrolling, human-like pauses, and `webdriver` masking. |
+| **OSRM** (vs Google Maps API)  | Free public API, no key required, for route calculations. |
+| **Ollama** (vs cloud API)      | 100% local inference — no cost, no data leaks, deterministic (`temperature=0`). |
+| **SQLite** (vs CSV files)      | Native deduplication (`UNIQUE`), incremental migrations, SQL queries for filtering. |
+| **`__NEXT_DATA__`**            | Leboncoin is a Next.js app: structured data is injected into the DOM as JSON, more reliable than HTML scraping. |
+| **Flask** (vs FastAPI, Streamlit) | Minimal and lightweight for a local tool. Serves the UI in a single route and exposes 5 simple REST endpoints. No build step, no page reloads: JS handles client-side filtering/sorting.

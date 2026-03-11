@@ -1,74 +1,74 @@
 # LBC Scraper
 
-Scraper de terrains constructibles sur Leboncoin (rayon 100 km autour de Toulouse).
-Utilise **Playwright** pour contourner la protection DataDome, calcule le temps de trajet
-via **OSRM** (gratuit, sans clé API), stocke tout dans **SQLite**, enrichit les annonces
-par analyse IA locale avec **Ollama** et propose une **interface web** (Flask) pour éditer,
-filtrer et annoter les annonces.
+Scraper for buildable land listings on Leboncoin (100 km radius around Toulouse).
+Uses **Playwright** to bypass DataDome protection, calculates travel time
+via **OSRM** (free, no API key required), stores everything in **SQLite**, enriches listings
+with local AI analysis using **Ollama**, and provides a **web interface** (Flask) to edit,
+filter, and annotate listings.
 
-## Prérequis
+## Prerequisites
 
 ```bash
 pip install -r requirements.txt
 python -m playwright install chromium
-ollama pull gemma3:12b   # uniquement pour --analyze
+ollama pull gemma3:12b   # only required for --analyze
 ```
 
-Python 3.10+ requis (annotations `X | Y`).
+Python 3.10+ required (`X | Y` annotations).
 
 ## Usage
 
 ```bash
-# 1. Scraper les annonces et calculer les trajets
+# 1. Scrape listings and calculate travel times
 python main.py --scrape
 
-# 2. Récupérer les descriptions complètes des annonces
+# 2. Retrieve full descriptions for each listing
 python main.py --get-description
 
-# 3. Analyser les descriptions avec le LLM local
+# 3. Analyze descriptions with the local LLM
 python main.py --analyze
 
-# 4. Exporter en CSV
+# 4. Export to CSV
 python main.py --export-csv
 
-# 5. Lancer l'interface web d'édition (http://localhost:5000)
+# 5. Launch the web editing interface (http://localhost:5000)
 python main.py --web
 ```
 
-Les étapes 1 à 4 sont indépendantes et cumulatives. L'ordre recommandé est 1 → 2 → 3 → 4.
-L'étape 5 peut être lancée à tout moment pour consulter et éditer la base.
+Steps 1 to 4 are independent and cumulative. The recommended order is 1 → 2 → 3 → 4.
+Step 5 can be launched at any time to browse and edit the database.
 
 ## Arguments
 
 | Argument            | Description                                                                 |
 |---------------------|-----------------------------------------------------------------------------|
-| `--scrape`          | Scrape Leboncoin et enregistre les nouvelles annonces dans `lbc_data.db`   |
-| `--get-description` | Visite chaque annonce sans description et récupère son texte complet        |
-| `--analyze`         | Analyse les descriptions via Ollama et remplit les champs IA (viabilisé…)  |
-| `--export-csv`      | Exporte toutes les données de la base vers un fichier CSV horodaté         |
-| `--web`             | Lance l'interface web d'édition sur `http://localhost:5000`                |
+| `--scrape`          | Scrapes Leboncoin and saves new listings to `lbc_data.db`                  |
+| `--get-description` | Visits each listing without a description and retrieves its full text       |
+| `--analyze`         | Analyzes descriptions via Ollama and fills in AI fields (serviced…)        |
+| `--export-csv`      | Exports all database data to a timestamped CSV file                        |
+| `--web`             | Launches the web editing interface at `http://localhost:5000`              |
 
-## Structure du projet
+## Project Structure
 
 ```
-main.py            Point d'entrée CLI
-config.py          Constantes (URL de recherche, coordonnées Toulouse…)
-parsers.py         Extraction des champs depuis les objets JSON Leboncoin
-routing.py         Calcul du temps de trajet Toulouse via OSRM
-browser.py         Pilotage Playwright (scraping, anti-bot)
-database.py        Persistance SQLite + déduplication
-descriptions.py    Récupération des descriptions complètes
-analyzer.py        Analyse IA locale (Ollama / gemma3:12b)
-exporter.py        Export CSV
-web.py             Serveur Flask — interface web d'édition
+main.py            CLI entry point
+config.py          Constants (search URL, Toulouse coordinates…)
+parsers.py         Field extraction from Leboncoin JSON objects
+routing.py         Travel time calculation to Toulouse via OSRM
+browser.py         Playwright automation (scraping, anti-bot)
+database.py        SQLite persistence + deduplication
+descriptions.py    Full description retrieval
+analyzer.py        Local AI analysis (Ollama / gemma3:12b)
+exporter.py        CSV export
+web.py             Flask server — web editing interface
 templates/
-  index.html       Interface HTML/JS d'édition des annonces
-lbc_data.db        Base SQLite générée à l'exécution
+  index.html       HTML/JS listing editing interface
+lbc_data.db        SQLite database generated at runtime
 ```
 
-Pour une description détaillée de l'architecture, des dépendances entre modules et du
-schéma de base de données, voir [ARCHITECTURE.md](ARCHITECTURE.md).
+For a detailed description of the architecture, module dependencies, and the
+database schema, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Avertissement
+## Disclaimer
 
-L'utilisation de ce scraper doit respecter les conditions d'utilisation du site Leboncoin.
+Use of this scraper must comply with Leboncoin's terms of service.
