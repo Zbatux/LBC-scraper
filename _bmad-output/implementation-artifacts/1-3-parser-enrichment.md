@@ -1,6 +1,6 @@
 # Story 1.3: Parser Enrichment
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -44,27 +44,27 @@ so that the database layer has all data needed for fuzzy matching and history tr
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `parse_date_publication(ad)` to `parsers.py` (AC: #3, #4)
-  - [ ] Extract `date_publication` from `ad.get("first_publication_date")`
-  - [ ] Return the value as-is (string) if present and truthy
-  - [ ] Return `None` if absent, empty, or any exception occurs (NFR8 guard)
+- [x] Task 1: Add `parse_date_publication(ad)` to `parsers.py` (AC: #3, #4)
+  - [x] Extract `date_publication` from `ad.get("first_publication_date")`
+  - [x] Return the value as-is (string) if present and truthy
+  - [x] Return `None` if absent, empty, or any exception occurs (NFR8 guard)
 
-- [ ] Task 2: Update `process()` in `database.py` to include lat, lng, date_publication in output dict (AC: #1, #2, #3, #4, #5)
-  - [ ] Import `parse_date_publication` from `parsers` (add to existing import line)
-  - [ ] Call `get_coords(ad)` unconditionally before the routing branch (not just inside `else`)
-  - [ ] Call `parse_date_publication(ad)` for each ad
-  - [ ] Add `lat`, `lng`, `date_publication` keys to the returned dict in `rows.append({...})`
-  - [ ] Preserve all existing keys: `titre`, `prix`, `superficie`, `prix_m2`, `trajet`, `lien`
+- [x] Task 2: Update `process()` in `database.py` to include lat, lng, date_publication in output dict (AC: #1, #2, #3, #4, #5)
+  - [x] Import `parse_date_publication` from `parsers` (add to existing import line)
+  - [x] Call `get_coords(ad)` unconditionally before the routing branch (not just inside `else`)
+  - [x] Call `parse_date_publication(ad)` for each ad
+  - [x] Add `lat`, `lng`, `date_publication` keys to the returned dict in `rows.append({...})`
+  - [x] Preserve all existing keys: `titre`, `prix`, `superficie`, `prix_m2`, `trajet`, `lien`
 
-- [ ] Task 3: Write tests in `tests/test_parser_enrichment.py` (AC: #1, #2, #3, #4, #5)
-  - [ ] Test `parse_date_publication()` — returns string when key present
-  - [ ] Test `parse_date_publication()` — returns None when key absent
-  - [ ] Test `parse_date_publication()` — returns None when value is empty string/None
-  - [ ] Test `get_coords()` — returns (float, float) when lat/lng present
-  - [ ] Test `get_coords()` — returns (None, None) when location absent
-  - [ ] Test `get_coords()` — returns (None, None) when lat/lng keys missing from location
-  - [ ] Test `process()` output dict includes `lat`, `lng`, `date_publication` keys (mock `drive_time`)
-  - [ ] Test `process()` output dict still includes all existing keys (mock `drive_time`)
+- [x] Task 3: Write tests in `tests/test_parser_enrichment.py` (AC: #1, #2, #3, #4, #5)
+  - [x] Test `parse_date_publication()` — returns string when key present
+  - [x] Test `parse_date_publication()` — returns None when key absent
+  - [x] Test `parse_date_publication()` — returns None when value is empty string/None
+  - [x] Test `get_coords()` — returns (float, float) when lat/lng present
+  - [x] Test `get_coords()` — returns (None, None) when location absent
+  - [x] Test `get_coords()` — returns (None, None) when lat/lng keys missing from location
+  - [x] Test `process()` output dict includes `lat`, `lng`, `date_publication` keys (mock `drive_time`)
+  - [x] Test `process()` output dict still includes all existing keys (mock `drive_time`)
 
 ## Dev Notes
 
@@ -311,6 +311,26 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+None — implementation straightforward, all 16 tests passed on first run.
+
+### Code Review Fixes (claude-sonnet-4-6)
+
+- **[H1] Fixed falsy zero bug in `database.py`**: `if lat and lng:` → `if lat is not None and lng is not None:` — prevents `lat=0.0`/`lng=0.0` being treated as missing GPS (NFR9 correctness).
+- **[M1] Fixed `get_coords()` float cast in `parsers.py`**: now explicitly casts to `float()` with `ValueError`/`TypeError` guard. Returns `None` for malformed (non-numeric) values. AC1 now fully satisfied.
+- **[M2/M3] Two new tests**: `test_returns_floats_when_int_coords` (AC1 type check) and `test_returns_none_none_when_coords_malformed` (AC2 malformed handling). 18 total tests, 53/53 suite-wide.
+- Updated return type annotation on `get_coords()` to `tuple[float | None, float | None]`.
+
 ### Completion Notes List
 
+- Added `parse_date_publication(ad)` to `parsers.py`: extracts `ad.get("first_publication_date")`, returns `str(val)` if truthy else `None`. No new imports required (AC3, AC4, NFR8).
+- Refactored `process()` in `database.py`: moved `get_coords(ad)` call to run unconditionally before the routing cache check (previously only ran in the `else` branch). Added `parse_date_publication(ad)` call alongside it.
+- Updated `rows.append({...})` to include `lat`, `lng`, `date_publication` keys. All existing keys (`titre`, `prix`, `superficie`, `prix_m2`, `trajet`, `lien`) preserved unchanged (AC1, AC2, AC5, FR12).
+- Updated import line in `database.py` to include `parse_date_publication`.
+- 18 tests in `tests/test_parser_enrichment.py`: 6 for `parse_date_publication`, 7 for `get_coords`, 5 integration tests for `process()` output. Critical test: `test_lat_lng_extracted_even_when_trajet_cached` verifies unconditional `get_coords()` call.
+- 53/53 total tests pass, zero regressions.
+
 ### File List
+
+- `parsers.py` — added `parse_date_publication(ad) -> str | None`; hardened `get_coords()` with float cast + error guard; updated type annotation
+- `database.py` — updated import line + refactored `process()` (unconditional `get_coords`, new dict keys, fixed falsy zero bug)
+- `tests/test_parser_enrichment.py` — new file (18 tests)

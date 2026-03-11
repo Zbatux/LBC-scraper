@@ -3,7 +3,7 @@ import random
 import sqlite3
 import time
 
-from parsers import build_url, get_coords, parse_area, parse_price
+from parsers import build_url, get_coords, parse_area, parse_price, parse_date_publication
 from routing import drive_time
 
 
@@ -39,14 +39,16 @@ def process(raw: list) -> list:
         lien = ad.get("link") or build_url(ad)
         prix_m2 = round(prix / superficie, 2) if prix and superficie and superficie > 0 else None
 
+        lat, lng = get_coords(ad)
+        date_publication = parse_date_publication(ad)
+
         # Vérification si le trajet est déjà calculé en base
         key = hashlib.md5(f"{titre}|{superficie}".encode('utf-8')).hexdigest()
         if key in existing:
             trajet = existing[key]
             print(f"  [{i}/{len(raw)}] {titre[:55]} (trajet en cache : {trajet})")
         else:
-            lat, lng = get_coords(ad)
-            if lat and lng:
+            if lat is not None and lng is not None:
                 print(f"  [{i}/{len(raw)}] {titre[:55]}")
                 trajet = drive_time(lat, lng)
                 time.sleep(random.uniform(0.8, 2.0))
@@ -60,6 +62,9 @@ def process(raw: list) -> list:
             "prix_m2": prix_m2,
             "trajet": trajet,
             "lien": lien,
+            "lat": lat,
+            "lng": lng,
+            "date_publication": date_publication,
         })
     return rows
 

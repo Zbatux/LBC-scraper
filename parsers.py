@@ -36,9 +36,26 @@ def parse_area(ad: dict) -> float | None:
     return None
 
 
-def get_coords(ad: dict) -> tuple:
+def get_coords(ad: dict) -> tuple[float | None, float | None]:
     loc = ad.get("location", {})
-    return loc.get("lat"), loc.get("lng")
+    lat = loc.get("lat")
+    lng = loc.get("lng")
+    try:
+        lat = float(lat) if lat is not None else None
+    except (ValueError, TypeError):
+        lat = None
+    try:
+        lng = float(lng) if lng is not None else None
+    except (ValueError, TypeError):
+        lng = None
+    return lat, lng
+
+
+def parse_date_publication(ad: dict) -> str | None:
+    val = ad.get("first_publication_date")
+    if not val:
+        return None
+    return str(val)
 
 
 def build_url(ad: dict) -> str:
