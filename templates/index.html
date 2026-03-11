@@ -146,6 +146,17 @@
     .badge-off { background: #f1f5f9; color: #64748b; }
     .badge-null { background: #fff3cd; color: #92400e; }
 
+    /* status badge */
+    .status-badge {
+      display: inline-block; padding: 2px 7px;
+      border-radius: 10px; font-size: 10px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .status-new       { background: #dcfce7; color: #166534; }
+    .status-changed   { background: #fef3c7; color: #92400e; }
+    .status-reposted  { background: #dbeafe; color: #1e40af; }
+    .status-unchanged { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
+
     /* note inline edit */
     .note-cell {
       text-align: center; cursor: pointer; min-width: 44px;
@@ -229,6 +240,16 @@
   </label>
   <span class="filter-sep">|</span>
   <label>Note min <input type="number" id="fNoteMin" placeholder="1–10" min="1" max="10" /></label>
+  <span class="filter-sep">|</span>
+  <label>Statut
+    <select id="fStatus">
+      <option value="">Tous</option>
+      <option value="new">Nouveaux</option>
+      <option value="price_changed">Prix changé</option>
+      <option value="reposted">Reposté</option>
+      <option value="unchanged">Inchangé</option>
+    </select>
+  </label>
   <button id="resetFilters">Réinitialiser</button>
 </div>
 
@@ -255,6 +276,9 @@
     <thead>
       <tr>
         <th class="sel-cell"><input type="checkbox" id="selectAll" /></th>
+        <th class="sortable" data-col="status">Statut</th>
+        <th class="sortable" data-col="first_seen">1ère vue</th>
+        <th class="sortable" data-col="date_publication">Publié le</th>
         <th class="sortable" data-col="titre">Titre</th>
         <th class="sortable" data-col="prix">Prix&nbsp;€</th>
         <th class="sortable" data-col="superficie">Surf.&nbsp;m²</th>
@@ -287,6 +311,22 @@
     if (val === 1)    return `<span class="badge badge-on">Oui</span>`;
     if (val === 0)    return `<span class="badge badge-off">Non</span>`;
     return `<span class="badge badge-null">?</span>`;
+  }
+
+  function statusBadge(status) {
+    if (status === 'new')           return `<span class="status-badge status-new">nouveau</span>`;
+    if (status === 'price_changed') return `<span class="status-badge status-changed">prix changé</span>`;
+    if (status === 'reposted')      return `<span class="status-badge status-reposted">reposté</span>`;
+    return `<span class="status-badge status-unchanged">—</span>`; // unchanged, null, or unknown
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "—";
+    // Date-only strings (YYYY-MM-DD) are UTC by spec; append time to force local-time parsing
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso + "T00:00:00" : iso;
+    const d = new Date(normalized);
+    if (isNaN(d)) return "—";
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
   }
 
   /** Convert "1h 23min" → minutes (for sorting/filtering) */
@@ -335,6 +375,7 @@
     const fViab      = parseBoolFilter("fViabilise");
     const fConst     = parseBoolFilter("fConstruct");
     const fAgri      = parseBoolFilter("fAgricole");
+    const fStatus    = document.getElementById("fStatus").value;
 
     return allData.filter(a => {
       if (hideNogo && a.nogo === 1) return false;
@@ -349,6 +390,7 @@
       if (!matchBool(fViab,  a.viabilise))                                       return false;
       if (!matchBool(fConst, a.partiellement_constructible))                     return false;
       if (!matchBool(fAgri,  a.partiellement_agricole))                          return false;
+      if (fStatus && a.status !== fStatus)                                        return false;
       return true;
     });
   }
@@ -383,6 +425,9 @@
 
       tr.innerHTML = `
         <td class="sel-cell"><input type="checkbox" class="row-cb" /></td>
+        <td>${statusBadge(a.status)}</td>
+        <td>${fmtDate(a.first_seen)}</td>
+        <td>${fmtDate(a.date_publication)}</td>
         <td class="titre-cell" title="${escHtml(a.titre || "")}">${escHtml(a.titre || "—")}</td>
         <td>${a.prix != null ? fmt(a.prix) + "\u00a0€" : "—"}</td>
         <td>${a.superficie != null ? fmt(a.superficie) + "\u00a0m²" : "—"}</td>
@@ -568,16 +613,15 @@
   });
 
   // ── Filters ──────────────────────────────────────────────────
-  ["hideNogo","fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin",
-   "fViabilise","fConstruct","fAgricole"]
+  ["hideNogo","fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
     .forEach(id => document.getElementById(id).addEventListener("input", render));
-  ["hideNogo","fViabilise","fConstruct","fAgricole"].forEach(id =>
+  ["hideNogo","fViabilise","fConstruct","fAgricole","fStatus"].forEach(id =>
     document.getElementById(id).addEventListener("change", render));
 
   document.getElementById("resetFilters").addEventListener("click", () => {
     ["fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
       .forEach(id => document.getElementById(id).value = "");
-    ["fViabilise","fConstruct","fAgricole"]
+    ["fViabilise","fConstruct","fAgricole","fStatus"]
       .forEach(id => document.getElementById(id).value = "");
     document.getElementById("hideNogo").checked = false;
     render();

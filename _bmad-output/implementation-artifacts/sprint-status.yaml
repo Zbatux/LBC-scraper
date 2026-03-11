@@ -49,7 +49,7 @@ development_status:
 
   epic-2: in-progress
   2-1-updated-listings-api-response: done
-  2-2-status-badges-in-main-table: backlog
+  2-2-status-badges-in-main-table: done
   2-3-history-api-endpoint: backlog
   2-4-history-modal: backlog
   epic-2-retrospective: optional

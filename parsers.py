@@ -52,9 +52,16 @@ def get_coords(ad: dict) -> tuple[float | None, float | None]:
 
 
 def parse_date_publication(ad: dict) -> str | None:
+    from datetime import datetime, timezone
     val = ad.get("first_publication_date")
     if not val:
         return None
+    # Unix timestamp (int or numeric string) → ISO 8601 datetime
+    try:
+        ts = int(val)
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        pass
     return str(val)
 
 
