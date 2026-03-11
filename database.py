@@ -67,60 +67,101 @@ def process(raw: list) -> list:
 def save_to_database(data, db_name="lbc_data.db"):
     """Enregistre les données extraites dans une base de données SQLite."""
     conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Création de la table si elle n'existe pas
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS annonces (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            titre TEXT,
-            prix REAL,
-            superficie REAL,
-            prix_m2 REAL,
-            trajet TEXT,
-            lien TEXT,
-            unique_key TEXT UNIQUE,
-            description TEXT
+        # Création de la table si elle n'existe pas
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS annonces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titre TEXT,
+                prix REAL,
+                superficie REAL,
+                prix_m2 REAL,
+                trajet TEXT,
+                lien TEXT,
+                unique_key TEXT UNIQUE,
+                description TEXT
+            )
+        ''')
+
+        # Migration : ajout des colonnes manquantes pour les bases existantes
+        migrations = [
+            "ALTER TABLE annonces ADD COLUMN description TEXT",
+            "ALTER TABLE annonces ADD COLUMN viabilise INTEGER",
+            "ALTER TABLE annonces ADD COLUMN emprise_sol REAL",
+            "ALTER TABLE annonces ADD COLUMN partiellement_constructible INTEGER",
+            "ALTER TABLE annonces ADD COLUMN partiellement_agricole INTEGER",
+            "ALTER TABLE annonces ADD COLUMN analyse_faite INTEGER DEFAULT 0",
+            "ALTER TABLE annonces ADD COLUMN nogo INTEGER DEFAULT 0",
+            "ALTER TABLE annonces ADD COLUMN note INTEGER",
+            "ALTER TABLE annonces ADD COLUMN lat REAL",
+            "ALTER TABLE annonces ADD COLUMN lng REAL",
+            "ALTER TABLE annonces ADD COLUMN status TEXT",
+            "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
+            "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
+        ]
+        for sql in migrations:
+            try:
+                cursor.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # colonne déjà présente
+
+        # Historique des snapshots de scraping
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS annonces_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                annonce_id INTEGER,
+                scraped_at TEXT,
+                titre TEXT,
+                prix REAL,
+                superficie REAL,
+                prix_m2 REAL,
+                trajet TEXT,
+                lien TEXT,
+                unique_key TEXT,
+                description TEXT,
+                viabilise INTEGER,
+                emprise_sol REAL,
+                partiellement_constructible INTEGER,
+                partiellement_agricole INTEGER,
+                analyse_faite INTEGER DEFAULT 0,
+                nogo INTEGER DEFAULT 0,
+                note INTEGER,
+                lat REAL,
+                lng REAL,
+                status TEXT,
+                first_seen TEXT,
+                date_publication TEXT
+            )
+        ''')
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_annonce_id "
+            "ON annonces_history(annonce_id)"
         )
-    ''')
 
-    # Migration : ajout des colonnes manquantes pour les bases existantes
-    migrations = [
-        "ALTER TABLE annonces ADD COLUMN description TEXT",
-        "ALTER TABLE annonces ADD COLUMN viabilise INTEGER",
-        "ALTER TABLE annonces ADD COLUMN emprise_sol REAL",
-        "ALTER TABLE annonces ADD COLUMN partiellement_constructible INTEGER",
-        "ALTER TABLE annonces ADD COLUMN partiellement_agricole INTEGER",
-        "ALTER TABLE annonces ADD COLUMN analyse_faite INTEGER DEFAULT 0",
-        "ALTER TABLE annonces ADD COLUMN nogo INTEGER DEFAULT 0",
-        "ALTER TABLE annonces ADD COLUMN note INTEGER",
-    ]
-    for sql in migrations:
-        try:
-            cursor.execute(sql)
-        except sqlite3.OperationalError:
-            pass  # colonne déjà présente
+        nouvelles = 0
+        for annonce in data:
+            unique_key = generate_unique_key(annonce)
+            try:
+                cursor.execute('''
+                    INSERT INTO annonces (titre, prix, superficie, prix_m2, trajet, lien, unique_key)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    annonce.get("titre"),
+                    annonce.get("prix"),
+                    annonce.get("superficie"),
+                    annonce.get("prix_m2"),
+                    annonce.get("trajet"),
+                    annonce.get("lien"),
+                    unique_key
+                ))
+                nouvelles += 1
+            except sqlite3.IntegrityError:
+                pass  # doublon, ignoré
 
-    nouvelles = 0
-    for annonce in data:
-        unique_key = generate_unique_key(annonce)
-        try:
-            cursor.execute('''
-                INSERT INTO annonces (titre, prix, superficie, prix_m2, trajet, lien, unique_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                annonce.get("titre"),
-                annonce.get("prix"),
-                annonce.get("superficie"),
-                annonce.get("prix_m2"),
-                annonce.get("trajet"),
-                annonce.get("lien"),
-                unique_key
-            ))
-            nouvelles += 1
-        except sqlite3.IntegrityError:
-            pass  # doublon, ignoré
-
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
     return nouvelles
