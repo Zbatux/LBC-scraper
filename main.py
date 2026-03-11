@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 
 from analyzer import analyze_all
 from browser import get_all_ads
-from database import process, save_to_database
+from database import process, save_or_merge
 from descriptions import fetch_all_descriptions
 from exporter import export_to_csv
 
@@ -93,7 +93,7 @@ def main():
         rows = process(raw)
 
         print("\nSauvegarde en base de données...")
-        nouvelles = save_to_database(rows)
+        nouvelles = save_or_merge(rows)
 
         print(f"\n{'='*60}")
         print(f"  Total annonces    : {len(rows)}")
