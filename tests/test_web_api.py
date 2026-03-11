@@ -7,6 +7,8 @@ Verifies:
 - AC3: date_publication=NULL in DB → null in JSON (no crash)
 - AC4: All 14 pre-existing fields remain present (non-regression)
 """
+import sqlite3
+
 import pytest
 import database
 import web
@@ -119,3 +121,154 @@ def test_get_annonces_non_regression_existing_fields(client):
     ]
     for field in pre_existing_fields:
         assert field in listing, f"Pre-existing field missing from response: {field}"
+
+
+# ---------------------------------------------------------------------------
+# Story 2.3: GET /api/annonces/<id>/history
+# ---------------------------------------------------------------------------
+
+def test_history_returns_snapshots_ordered_asc(client):
+    """AC1+AC2: History rows ordered by scraped_at ASC, all key columns present."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    annonce = conn.execute("SELECT id FROM annonces LIMIT 1").fetchone()
+    annonce_id = annonce["id"]
+    conn.execute(
+        "INSERT INTO annonces_history (annonce_id, scraped_at, titre, prix, status, list_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (annonce_id, "2024-01-01T10:00:00", "Terrain test v1", 40000.0, "price_changed", "1000001")
+    )
+    conn.execute(
+        "INSERT INTO annonces_history (annonce_id, scraped_at, titre, prix, status, list_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (annonce_id, "2024-02-01T10:00:00", "Terrain test v2", 45000.0, "price_changed", "1000001")
+    )
+    conn.commit()
+    conn.close()
+
+    response = c.get(f"/api/annonces/{annonce_id}/history")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    assert len(data) == 2
+    # AC1: chronological ASC order
+    assert data[0]["scraped_at"] == "2024-01-01T10:00:00"
+    assert data[1]["scraped_at"] == "2024-02-01T10:00:00"
+    # AC2: all snapshot columns present (SELECT * returns all columns, NULLs included)
+    all_history_columns = (
+        "id", "annonce_id", "scraped_at", "titre", "prix", "superficie", "prix_m2",
+        "trajet", "lien", "unique_key", "description", "viabilise", "emprise_sol",
+        "partiellement_constructible", "partiellement_agricole", "analyse_faite",
+        "nogo", "note", "lat", "lng", "status", "first_seen", "date_publication", "list_id",
+    )
+    for key in all_history_columns:
+        assert key in data[0], f"Missing column in history response: {key}"
+
+
+def test_history_returns_empty_for_listing_with_no_history(client):
+    """AC3+AC5: Listing exists but has no history → empty bare array, status 200."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    annonce = conn.execute("SELECT id FROM annonces LIMIT 1").fetchone()
+    annonce_id = annonce["id"]
+    conn.close()
+
+    response = c.get(f"/api/annonces/{annonce_id}/history")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)   # AC5: bare array, NOT a dict
+    assert data == []               # AC3: empty, not 404
+
+
+def test_history_returns_404_for_nonexistent_id(client):
+    """AC4: Non-existent integer ID → 404 with {"error": ...}."""
+    c, db_path = client
+
+    response = c.get("/api/annonces/99999/history")
+
+    assert response.status_code == 404
+    data = response.get_json()
+    assert "error" in data
+
+
+def test_history_noninteger_id_returns_404(client):
+    """AC4: Non-integer path value → Flask auto-404 (regression guard for <int:> param type)."""
+    c, db_path = client
+
+    response = c.get("/api/annonces/abc/history")
+
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Story 2.4: history_count field in GET /api/annonces
+# ---------------------------------------------------------------------------
+
+def test_get_annonces_includes_history_count(client):
+    """AC5: history_count is present and equals number of history rows."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    annonce = conn.execute("SELECT id FROM annonces LIMIT 1").fetchone()
+    annonce_id = annonce["id"]
+    conn.execute(
+        "INSERT INTO annonces_history (annonce_id, scraped_at, titre, prix, status, list_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (annonce_id, "2024-01-01T10:00:00", "Terrain v1", 40000.0, "price_changed", "1000001")
+    )
+    conn.execute(
+        "INSERT INTO annonces_history (annonce_id, scraped_at, titre, prix, status, list_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (annonce_id, "2024-02-01T10:00:00", "Terrain v2", 45000.0, "price_changed", "1000001")
+    )
+    conn.commit()
+    conn.close()
+
+    response = c.get("/api/annonces")
+    data = response.get_json()
+    listing = data[0]
+
+    assert "history_count" in listing
+    assert listing["history_count"] == 2
+
+
+def test_get_annonces_history_count_zero_for_no_history(client):
+    """AC5: listing with no history rows → history_count == 0."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    response = c.get("/api/annonces")
+    data = response.get_json()
+    listing = data[0]
+
+    assert "history_count" in listing
+    assert listing["history_count"] == 0
+
+
+def test_get_annonces_non_regression_after_history_count_addition(client):
+    """Non-regression: all 18 expected fields still present after history_count added."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    response = c.get("/api/annonces")
+    data = response.get_json()
+    listing = data[0]
+
+    expected_fields = [
+        "id", "titre", "prix", "superficie", "prix_m2", "trajet", "lien",
+        "viabilise", "emprise_sol", "partiellement_constructible", "partiellement_agricole",
+        "analyse_faite", "nogo", "note", "status", "first_seen", "date_publication",
+        "history_count",
+    ]
+    for field in expected_fields:
+        assert field in listing, f"Field missing from GET /api/annonces response: {field}"

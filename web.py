@@ -2,11 +2,12 @@
 Serveur Flask — Interface web d'édition des annonces LBC.
 
 Endpoints :
-  GET  /                       → Sert l'UI (templates/index.html)
-  GET  /api/annonces           → Retourne toutes les annonces en JSON
-  DELETE /api/annonces         → Suppression bulk  { ids: [int, ...] }
-  PATCH  /api/annonces/bulk    → Toggle bool bulk   { ids, field, value }
-  PATCH  /api/annonces/<id>    → Mise à jour partielle d'une annonce
+  GET  /                               → Sert l'UI (templates/index.html)
+  GET  /api/annonces                   → Retourne toutes les annonces en JSON
+  GET  /api/annonces/<id>/history      → Snapshots historiques d'une annonce
+  DELETE /api/annonces                 → Suppression bulk  { ids: [int, ...] }
+  PATCH  /api/annonces/bulk            → Toggle bool bulk   { ids, field, value }
+  PATCH  /api/annonces/<id>            → Mise à jour partielle d'une annonce
 
 Seuls les champs de la EDITABLE_FIELDS whitelist sont modifiables
 pour prévenir toute injection via nom de colonne.
@@ -38,21 +39,54 @@ def get_db():
 
 
 def ensure_columns():
-    """Garantit que les colonnes de migration existent (bases créées avant la migration)."""
+    """Garantit que les colonnes de migration et la table annonces_history existent."""
     conn = get_db()
-    for sql in [
-        "ALTER TABLE annonces ADD COLUMN nogo INTEGER DEFAULT 0",
-        "ALTER TABLE annonces ADD COLUMN note INTEGER",
-        "ALTER TABLE annonces ADD COLUMN status TEXT",
-        "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
-        "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
-    ]:
-        try:
-            conn.execute(sql)
-        except sqlite3.OperationalError:
-            pass
-    conn.commit()
-    conn.close()
+    try:
+        for sql in [
+            "ALTER TABLE annonces ADD COLUMN nogo INTEGER DEFAULT 0",
+            "ALTER TABLE annonces ADD COLUMN note INTEGER",
+            "ALTER TABLE annonces ADD COLUMN status TEXT",
+            "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
+            "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
+        ]:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS annonces_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                annonce_id INTEGER,
+                scraped_at TEXT,
+                titre TEXT,
+                prix REAL,
+                superficie REAL,
+                prix_m2 REAL,
+                trajet TEXT,
+                lien TEXT,
+                unique_key TEXT,
+                description TEXT,
+                viabilise INTEGER,
+                emprise_sol REAL,
+                partiellement_constructible INTEGER,
+                partiellement_agricole INTEGER,
+                analyse_faite INTEGER DEFAULT 0,
+                nogo INTEGER DEFAULT 0,
+                note INTEGER,
+                lat REAL,
+                lng REAL,
+                status TEXT,
+                first_seen TEXT,
+                date_publication TEXT,
+                list_id TEXT
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_annonce_id ON annonces_history(annonce_id)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # Appel immédiat à l'import pour migrer la base existante (ignoré si la base n'existe pas encore)
@@ -75,11 +109,30 @@ def get_annonces():
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT id, titre, prix, superficie, prix_m2, trajet, lien, "
-            "viabilise, emprise_sol, partiellement_constructible, partiellement_agricole, "
-            "analyse_faite, nogo, note, "
-            "status, first_seen, date_publication "
-            "FROM annonces ORDER BY id"
+            "SELECT a.id, a.titre, a.prix, a.superficie, a.prix_m2, a.trajet, a.lien, "
+            "a.viabilise, a.emprise_sol, a.partiellement_constructible, a.partiellement_agricole, "
+            "a.analyse_faite, a.nogo, a.note, "
+            "a.status, a.first_seen, a.date_publication, "
+            "(SELECT COUNT(*) FROM annonces_history WHERE annonce_id = a.id) AS history_count "
+            "FROM annonces a ORDER BY a.id"
+        ).fetchall()
+    finally:
+        conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/annonces/<int:annonce_id>/history", methods=["GET"])
+def get_annonce_history(annonce_id):
+    conn = get_db()
+    try:
+        # Verify annonce exists (AC4: 404 for non-existent integer IDs)
+        row = conn.execute("SELECT id FROM annonces WHERE id = ?", (annonce_id,)).fetchone()
+        if row is None:
+            return jsonify({"error": "not found"}), 404
+        rows = conn.execute(
+            "SELECT * FROM annonces_history "
+            "WHERE annonce_id = ? ORDER BY scraped_at ASC",
+            (annonce_id,),
         ).fetchall()
     finally:
         conn.close()
