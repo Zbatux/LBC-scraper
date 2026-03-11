@@ -12,6 +12,7 @@ Seuls les champs de la EDITABLE_FIELDS whitelist sont modifiables
 pour prévenir toute injection via nom de colonne.
 """
 
+import os
 import sqlite3
 
 from flask import Flask, jsonify, render_template, request
@@ -37,11 +38,14 @@ def get_db():
 
 
 def ensure_columns():
-    """Garantit que les colonnes nogo et note existent (bases créées avant la migration)."""
+    """Garantit que les colonnes de migration existent (bases créées avant la migration)."""
     conn = get_db()
     for sql in [
         "ALTER TABLE annonces ADD COLUMN nogo INTEGER DEFAULT 0",
         "ALTER TABLE annonces ADD COLUMN note INTEGER",
+        "ALTER TABLE annonces ADD COLUMN status TEXT",
+        "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
+        "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
     ]:
         try:
             conn.execute(sql)
@@ -51,9 +55,10 @@ def ensure_columns():
     conn.close()
 
 
-# Appel immédiat à l'import pour migrer la base existante
+# Appel immédiat à l'import pour migrer la base existante (ignoré si la base n'existe pas encore)
 with app.app_context():
-    ensure_columns()
+    if os.path.exists(DB_NAME):
+        ensure_columns()
 
 
 # ---------------------------------------------------------------------------
@@ -68,13 +73,16 @@ def index():
 @app.route("/api/annonces", methods=["GET"])
 def get_annonces():
     conn = get_db()
-    rows = conn.execute(
-        "SELECT id, titre, prix, superficie, prix_m2, trajet, lien, "
-        "viabilise, emprise_sol, partiellement_constructible, partiellement_agricole, "
-        "analyse_faite, nogo, note "
-        "FROM annonces ORDER BY id"
-    ).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(
+            "SELECT id, titre, prix, superficie, prix_m2, trajet, lien, "
+            "viabilise, emprise_sol, partiellement_constructible, partiellement_agricole, "
+            "analyse_faite, nogo, note, "
+            "status, first_seen, date_publication "
+            "FROM annonces ORDER BY id"
+        ).fetchall()
+    finally:
+        conn.close()
     return jsonify([dict(r) for r in rows])
 
 

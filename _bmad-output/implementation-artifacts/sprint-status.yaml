@@ -47,8 +47,8 @@ development_status:
   1-4-save-or-merge-integration: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-updated-listings-api-response: backlog
+  epic-2: in-progress
+  2-1-updated-listings-api-response: done
   2-2-status-badges-in-main-table: backlog
   2-3-history-api-endpoint: backlog
   2-4-history-modal: backlog
