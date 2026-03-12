@@ -15,8 +15,11 @@ pour prévenir toute injection via nom de colonne.
 
 import os
 import sqlite3
+import statistics
 
 from flask import Flask, jsonify, render_template, request
+
+import matcher
 
 DB_NAME = "lbc_data.db"
 
@@ -111,7 +114,7 @@ def get_annonces():
         rows = conn.execute(
             "SELECT a.id, a.titre, a.prix, a.superficie, a.prix_m2, a.trajet, a.lien, "
             "a.viabilise, a.emprise_sol, a.partiellement_constructible, a.partiellement_agricole, "
-            "a.analyse_faite, a.nogo, a.note, "
+            "a.analyse_faite, a.nogo, a.note, a.lat, a.lng, "
             "a.status, a.first_seen, a.date_publication, "
             "(SELECT COUNT(*) FROM annonces_history WHERE annonce_id = a.id) AS history_count "
             "FROM annonces a ORDER BY a.id"
@@ -137,6 +140,51 @@ def get_annonce_history(annonce_id):
     finally:
         conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+_SIMILAR_COLS = "id, titre, prix, superficie, prix_m2, trajet, lien, lat, lng, nogo, status"
+
+
+@app.route("/api/annonces/<int:annonce_id>/similar", methods=["GET"])
+def get_similar(annonce_id):
+    conn = get_db()
+    try:
+        row = conn.execute(
+            f"SELECT {_SIMILAR_COLS} FROM annonces WHERE id = ?", (annonce_id,)
+        ).fetchone()
+        if row is None:
+            return jsonify({"error": "not found"}), 404
+        target = dict(row)
+        if target.get("lat") is None or target.get("lng") is None:
+            return jsonify({"error": "listing has no GPS coordinates"}), 400
+        all_rows = conn.execute(f"SELECT {_SIMILAR_COLS} FROM annonces").fetchall()
+    finally:
+        conn.close()
+
+    candidates = [dict(r) for r in all_rows]
+    similar = matcher.find_similar(target, candidates)
+
+    # Summary stats — exclude nogo and NULL prix_m2
+    prix_m2_values = [
+        s["prix_m2"] for s in similar
+        if not s.get("nogo") and s.get("prix_m2") is not None
+    ]
+    if prix_m2_values:
+        summary = {
+            "count": len(similar),
+            "min_prix_m2": min(prix_m2_values),
+            "max_prix_m2": max(prix_m2_values),
+            "median_prix_m2": statistics.median(prix_m2_values),
+        }
+    else:
+        summary = {
+            "count": len(similar),
+            "min_prix_m2": None,
+            "max_prix_m2": None,
+            "median_prix_m2": None,
+        }
+
+    return jsonify({"target": target, "similar": similar, "summary": summary})
 
 
 @app.route("/api/annonces", methods=["DELETE"])

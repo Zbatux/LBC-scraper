@@ -132,10 +132,15 @@
       max-width: 240px; overflow: hidden;
       text-overflow: ellipsis; white-space: nowrap;
     }
-    td.lien-cell a {
-      color: #2563eb; text-decoration: none; font-size: 11px;
+    td.titre-cell a {
+      display: block;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #2563eb;
+      text-decoration: none;
     }
-    td.lien-cell a:hover { text-decoration: underline; }
+    td.titre-cell a:hover { text-decoration: underline; }
 
     /* boolean badge */
     .badge {
@@ -242,6 +247,49 @@
       border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;
     }
     .hist-btn:hover { background: #c7d2fe; }
+
+    /* compare button */
+    .cmp-btn {
+      padding: 3px 8px; background: #ccfbf1; color: #0891b2; border: none;
+      border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;
+      font-weight: 600;
+    }
+    .cmp-btn:hover { background: #99f6e4; }
+
+    /* compare modal extras */
+    .cmp-dialog { max-width: 960px; }
+    .cmp-target-card {
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
+      padding: 10px 14px; margin-bottom: 12px; font-size: 12px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .cmp-target-card span { font-weight: 600; }
+    .cmp-stats-bar {
+      background: #eff6ff; border-radius: 6px; padding: 8px 14px;
+      margin-bottom: 12px; font-size: 12px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+    }
+    .cmp-stats-bar strong { color: #1e40af; }
+    .cmp-table {
+      width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .cmp-table th {
+      background: #334155; color: #ffffff; padding: 7px 8px;
+      text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .04em;
+      white-space: nowrap; border-bottom: 2px solid #475569;
+      cursor: pointer; user-select: none;
+    }
+    .cmp-table th:hover { background: #475569; }
+    .cmp-sort-arrow { margin-left: 4px; font-size: 10px; }
+    .cmp-table td {
+      padding: 6px 8px; border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    .cmp-table tr:last-child td { border-bottom: none; }
+    .cmp-table tr.nogo-row { opacity: .45; }
+    .cmp-best { border-left: 3px solid #16a34a; }
+    .cmp-worst { border-left: 3px solid #dc2626; }
   </style>
 </head>
 <body>
@@ -345,8 +393,7 @@
         <th class="sortable" data-col="emprise_sol">Emprise&nbsp;%</th>
         <th class="sortable" data-col="note">Note</th>
         <th class="sortable" data-col="nogo">Nogo</th>
-        <th>Lien</th>
-        <th>Historique</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -364,11 +411,25 @@
   </div>
 </div>
 
+<!-- Compare modal -->
+<div id="compareModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-label="Comparaison de terrains similaires">
+  <div class="modal-dialog cmp-dialog">
+    <div class="modal-header">
+      <span id="cmpTitle">Comparaison</span>
+      <button id="cmpClose" aria-label="Fermer">✕</button>
+    </div>
+    <div class="modal-body" id="cmpBody"></div>
+  </div>
+</div>
+
 <script>
   // ── State ────────────────────────────────────────────────────
   let allData = [];
   let sortCol = null;
   let sortDir = 1; // 1=asc, -1=desc
+  let cmpSortCol = null;
+  let cmpSortDir = 1;
+  let cmpData = null;
 
   // ── Helpers ──────────────────────────────────────────────────
   const fmt = (v, dec = 0) =>
@@ -503,7 +564,7 @@
         <td>${statusBadge(a.status)}</td>
         <td>${fmtDate(a.first_seen)}</td>
         <td>${fmtDate(a.date_publication)}</td>
-        <td class="titre-cell" title="${escHtml(a.titre || "")}">${escHtml(a.titre || "—")}</td>
+        <td class="titre-cell" title="${escHtml(a.titre || "")}">${a.lien ? `<a href="${escHtml(a.lien)}" target="_blank" rel="noopener">${escHtml(a.titre || "—")}</a>` : escHtml(a.titre || "—")}</td>
         <td>${a.prix != null ? fmt(a.prix) + "\u00a0€" : "—"}</td>
         <td>${a.superficie != null ? fmt(a.superficie) + "\u00a0m²" : "—"}</td>
         <td>${a.prix_m2 != null ? fmt(a.prix_m2, 0) + "\u00a0€/m²" : "—"}</td>
@@ -514,10 +575,12 @@
         <td>${a.emprise_sol != null ? fmt(a.emprise_sol, 1) + "%" : "—"}</td>
         <td class="note-cell" data-id="${a.id}">${renderNote(a.note)}</td>
         <td class="nogo-cell">${badge(a.nogo)}</td>
-        <td class="lien-cell">${a.lien ? `<a href="${escHtml(a.lien)}" target="_blank" rel="noopener">Ouvrir ↗</a>` : "—"}</td>
         <td>${a.history_count > 0
           ? `<button class="hist-btn" data-id="${a.id}">📋 ${a.history_count}</button>`
-          : "—"
+          : ""
+        }${a.lat != null && a.lng != null
+          ? ` <button class="cmp-btn" data-id="${a.id}">Comparer</button>`
+          : ""
         }</td>
       `;
       tbody.appendChild(tr);
@@ -535,7 +598,8 @@
   function escHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   // ── Row events (note inline edit + nogo checkbox) ────────────
@@ -558,6 +622,14 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         openHistoryModal(parseInt(btn.dataset.id));
+      });
+    });
+
+    // Compare trigger
+    document.querySelectorAll(".cmp-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openCompareModal(parseInt(btn.dataset.id));
       });
     });
   }
@@ -595,6 +667,7 @@
 
   // ── History modal ─────────────────────────────────────────────
   async function openHistoryModal(id) {
+    closeCompareModal();
     const ann = allData.find(x => x.id === id);
     document.getElementById("modalTitle").textContent =
       ann ? `Historique — ${ann.titre || "annonce #" + id}` : `Historique #${id}`;
@@ -654,9 +727,161 @@
     document.getElementById("modalBody").innerHTML = html;
   }
 
-  function closeModal() {
+  function closeHistoryModal() {
     document.getElementById("historyModal").style.display = "none";
     document.getElementById("modalBody").innerHTML = "";
+  }
+
+  // ── Compare modal ───────────────────────────────────────────────
+  async function openCompareModal(id) {
+    closeHistoryModal();
+    const ann = allData.find(x => x.id === id);
+    document.getElementById("cmpTitle").textContent =
+      ann ? `Comparaison — ${ann.titre || "annonce #" + id}` : `Comparaison #${id}`;
+    document.getElementById("cmpBody").innerHTML = "<p>Chargement…</p>";
+    document.getElementById("compareModal").style.display = "flex";
+
+    let data;
+    try {
+      const res = await fetch(`/api/annonces/${id}/similar`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } catch (err) {
+      document.getElementById("cmpBody").innerHTML = "<p>Erreur lors du chargement des terrains similaires.</p>";
+      return;
+    }
+
+    const { target, similar, summary } = data;
+    cmpData = data;
+    cmpSortCol = null;
+    cmpSortDir = 1;
+
+    if (summary.count === 0) {
+      document.getElementById("cmpBody").innerHTML =
+        `<div class="cmp-target-card">
+          <span>Prix:</span> ${target.prix != null ? fmt(target.prix) + "\u00a0€" : "—"}
+          <span>Superficie:</span> ${target.superficie != null ? fmt(target.superficie) + "\u00a0m²" : "—"}
+          <span>€/m²:</span> ${target.prix_m2 != null ? fmt(target.prix_m2, 0) + "\u00a0€/m²" : "—"}
+          <span>Trajet:</span> ${escHtml(target.trajet || "—")}
+        </div>
+        <p>Aucun terrain similaire trouvé dans un rayon de 2 km.</p>`;
+      return;
+    }
+
+    // Target card
+    let html = `<div class="cmp-target-card">
+      <span>Prix:</span> ${target.prix != null ? fmt(target.prix) + "\u00a0€" : "—"}
+      <span>Superficie:</span> ${target.superficie != null ? fmt(target.superficie) + "\u00a0m²" : "—"}
+      <span>€/m²:</span> ${target.prix_m2 != null ? fmt(target.prix_m2, 0) + "\u00a0€/m²" : "—"}
+      <span>Trajet:</span> ${escHtml(target.trajet || "—")}
+    </div>`;
+
+    // Stats bar
+    if (summary.min_prix_m2 != null) {
+      html += `<div class="cmp-stats-bar">
+        <strong>${summary.count} terrain${summary.count > 1 ? "s" : ""} similaire${summary.count > 1 ? "s" : ""}</strong>
+        <span>Médiane: ${fmt(summary.median_prix_m2, 0)}\u00a0€/m²</span>
+        <span>Min: ${fmt(summary.min_prix_m2, 0)}\u00a0€/m²</span>
+        <span>Max: ${fmt(summary.max_prix_m2, 0)}\u00a0€/m²</span>
+      </div>`;
+    } else {
+      html += `<div class="cmp-stats-bar">
+        <strong>${summary.count} terrain${summary.count > 1 ? "s" : ""} similaire${summary.count > 1 ? "s" : ""}</strong>
+      </div>`;
+    }
+
+    html += renderCmpTable(similar, summary);
+    document.getElementById("cmpBody").innerHTML = html;
+  }
+
+  const cmpCols = [
+    { key: 'titre',       label: 'Titre',         type: 'string' },
+    { key: 'prix',        label: 'Prix €',         type: 'number' },
+    { key: 'superficie',  label: 'Superficie m²',  type: 'number' },
+    { key: 'prix_m2',     label: '€/m²',           type: 'number' },
+    { key: 'trajet',      label: 'Trajet',         type: 'string' },
+    { key: 'distance_m',  label: 'Distance',       type: 'number' },
+  ];
+
+  function renderCmpTable(similar, summary) {
+    const shouldHighlight = summary.min_prix_m2 != null && summary.min_prix_m2 > 0 &&
+      (summary.max_prix_m2 - summary.min_prix_m2) / summary.min_prix_m2 > 0.10;
+
+    let html = '<table class="cmp-table"><thead><tr>';
+    cmpCols.forEach(c => {
+      const arrow = cmpSortCol === c.key
+        ? `<span class="cmp-sort-arrow">${cmpSortDir === 1 ? "▲" : "▼"}</span>` : '';
+      const ariaSort = cmpSortCol === c.key
+        ? ` aria-sort="${cmpSortDir === 1 ? "ascending" : "descending"}"` : '';
+      html += `<th onclick="sortCmpTable('${c.key}')" tabindex="0" role="button"${ariaSort} onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortCmpTable('${c.key}')}">${c.label}${arrow}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    similar.forEach(s => {
+      const cls = [];
+      if (s.nogo) cls.push('nogo-row');
+      if (shouldHighlight && s.prix_m2 != null && !s.nogo) {
+        if (s.prix_m2 === summary.min_prix_m2) cls.push('cmp-best');
+        else if (s.prix_m2 === summary.max_prix_m2) cls.push('cmp-worst');
+      }
+      html += `<tr class="${cls.join(' ')}">`;
+      const titre = s.lien
+        ? `<a href="${escHtml(s.lien)}" target="_blank" rel="noopener">${escHtml(s.titre || "—")}</a>`
+        : escHtml(s.titre || "—");
+      html += `<td>${titre}</td>`;
+      html += `<td>${s.prix != null ? fmt(s.prix) + "\u00a0€" : "—"}</td>`;
+      html += `<td>${s.superficie != null ? fmt(s.superficie) + "\u00a0m²" : "—"}</td>`;
+      html += `<td>${s.prix_m2 != null ? fmt(s.prix_m2, 0) + "\u00a0€/m²" : "—"}</td>`;
+      html += `<td>${escHtml(s.trajet || "—")}</td>`;
+      html += `<td>${s.distance_m != null ? fmt(s.distance_m) + "\u00a0m" : "—"}</td>`;
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  function sortCmpTable(colKey) {
+    if (!cmpData) return;
+    if (cmpSortCol === colKey) {
+      cmpSortDir *= -1;
+    } else {
+      cmpSortCol = colKey;
+      cmpSortDir = 1;
+    }
+    const col = cmpCols.find(c => c.key === colKey);
+    const isString = col && col.type === 'string';
+    const isTrajet = colKey === 'trajet';
+    [...cmpData.similar].sort((a, b) => {
+      let av = a[colKey], bv = b[colKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (isTrajet) {
+        av = trajetToMin(av); bv = trajetToMin(bv);
+        return (av - bv) * cmpSortDir;
+      }
+      if (isString) {
+        return String(av).localeCompare(String(bv), 'fr') * cmpSortDir;
+      }
+      return (av - bv) * cmpSortDir;
+    }).forEach((item, i) => { cmpData.similar[i] = item; });
+    const tbody = document.querySelector('#cmpBody .cmp-table tbody');
+    const thead = document.querySelector('#cmpBody .cmp-table thead');
+    if (tbody && thead) {
+      const tmp = document.createElement('table');
+      tmp.innerHTML = renderCmpTable(cmpData.similar, cmpData.summary);
+      thead.innerHTML = tmp.querySelector('thead').innerHTML;
+      tbody.innerHTML = tmp.querySelector('tbody').innerHTML;
+    }
+  }
+
+  function closeCompareModal() {
+    document.getElementById("compareModal").style.display = "none";
+    document.getElementById("cmpBody").innerHTML = "";
+    cmpData = null;
+    cmpSortCol = null;
+    cmpSortDir = 1;
   }
 
   // ── API calls ────────────────────────────────────────────────
@@ -781,12 +1006,16 @@
   });
 
   // ── Modal close handlers (bound once at init) ────────────────
-  document.getElementById("modalClose").addEventListener("click", closeModal);
+  document.getElementById("modalClose").addEventListener("click", closeHistoryModal);
   document.getElementById("historyModal").addEventListener("click", function(e) {
-    if (e.target === this) closeModal();
+    if (e.target === this) closeHistoryModal();
+  });
+  document.getElementById("cmpClose").addEventListener("click", closeCompareModal);
+  document.getElementById("compareModal").addEventListener("click", function(e) {
+    if (e.target === this) closeCompareModal();
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") closeModal();
+    if (e.key === "Escape") { closeHistoryModal(); closeCompareModal(); }
   });
 
   // ── Init ─────────────────────────────────────────────────────

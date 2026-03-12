@@ -48,3 +48,57 @@ def find_match(lat: float, lng: float, area: float, candidates: list[dict]) -> i
                 return c_id
 
     return None
+
+
+def find_similar(target: dict, candidates: list[dict]) -> list[dict]:
+    """Return candidates within GPS radius and area tolerance of target, sorted by distance."""
+    t_lat = target.get("lat")
+    t_lng = target.get("lng")
+    t_area = target.get("superficie")
+    if t_lat is None or t_lng is None or t_area is None:
+        return []
+    try:
+        t_lat = float(t_lat)
+        t_lng = float(t_lng)
+        t_area = float(t_area)
+    except (TypeError, ValueError):
+        return []
+    if not (math.isfinite(t_lat) and math.isfinite(t_lng) and math.isfinite(t_area)):
+        return []
+    if t_area <= 0:
+        return []
+
+    t_id = target.get("id")
+    results = []
+
+    for cand in candidates:
+        if cand.get("id") == t_id:
+            continue
+        c_lat = cand.get("lat")
+        c_lng = cand.get("lng")
+        c_area = cand.get("superficie")
+        if c_lat is None or c_lng is None or c_area is None:
+            continue
+        try:
+            c_lat = float(c_lat)
+            c_lng = float(c_lng)
+            c_area = float(c_area)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(c_lat) and math.isfinite(c_lng) and math.isfinite(c_area)):
+            continue
+        if c_area <= 0:
+            continue
+
+        dist = _haversine(t_lat, t_lng, c_lat, c_lng)
+        if dist > config.SIMILAR_GPS_RADIUS_M:
+            continue
+
+        max_area = max(t_area, c_area)
+        if max_area > 0 and abs(t_area - c_area) / max_area <= config.SIMILAR_AREA_TOLERANCE_PCT:
+            result = dict(cand)
+            result["distance_m"] = round(dist)
+            results.append(result)
+
+    results.sort(key=lambda r: r["distance_m"])
+    return results

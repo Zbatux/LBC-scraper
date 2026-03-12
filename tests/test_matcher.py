@@ -195,3 +195,115 @@ class TestImportConstraints:
         for forbidden in ("sqlite3", "flask", "requests", "os", "sys"):
             assert forbidden not in imported, f"Forbidden import '{forbidden}' found in matcher.py"
         assert imported <= {"math", "config"}, f"Unexpected imports in matcher.py: {imported - {'math', 'config'}}"
+
+
+# ---------------------------------------------------------------------------
+# find_similar() tests — bare top-level functions
+# ---------------------------------------------------------------------------
+
+# Helper: reference point (Toulouse area)
+_SIM_LAT = 43.6044622
+_SIM_LNG = 1.4442469
+# ~1 km north: Δlat ≈ 1000/111320 ≈ 0.008983°
+_SIM_LAT_1KM = _SIM_LAT + 0.008983
+# ~3 km north (beyond 2 km radius)
+_SIM_LAT_3KM = _SIM_LAT + 0.02695
+
+
+def _sim_candidate(id, lat, lng, superficie, **extra):
+    d = {"id": id, "lat": lat, "lng": lng, "superficie": superficie}
+    d.update(extra)
+    return d
+
+
+def test_find_similar_nearby_candidate_included():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 500)]
+    result = matcher.find_similar(target, candidates)
+    assert len(result) == 1
+    assert result[0]["id"] == 2
+    assert "distance_m" in result[0]
+    assert 900 < result[0]["distance_m"] < 1100  # ~1 km
+
+
+def test_find_similar_candidate_too_far():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(2, _SIM_LAT_3KM, _SIM_LNG, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_area_difference_too_large():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    # 25% larger → exceeds 20% tolerance
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 667)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_at_threshold_boundaries():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    # Exactly at 20% area diff: 500 vs 625 → |500-625|/625 = 0.20 → included (<=)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 625)]
+    result = matcher.find_similar(target, candidates)
+    assert len(result) == 1
+
+
+def test_find_similar_target_no_gps():
+    target = _sim_candidate(1, None, None, 500)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_target_no_superficie():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, None)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_candidate_no_gps():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(2, None, None, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_candidate_null_superficie():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, None)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_candidate_zero_superficie():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 0)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_target_zero_superficie():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 0)
+    candidates = [_sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_self_exclusion():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    candidates = [_sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)]
+    assert matcher.find_similar(target, candidates) == []
+
+
+def test_find_similar_empty_candidates():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    assert matcher.find_similar(target, []) == []
+
+
+def test_find_similar_sorted_by_distance():
+    target = _sim_candidate(1, _SIM_LAT, _SIM_LNG, 500)
+    # ~1.5 km north
+    lat_1500m = _SIM_LAT + 0.01348
+    candidates = [
+        _sim_candidate(3, lat_1500m, _SIM_LNG, 500),  # farther
+        _sim_candidate(2, _SIM_LAT_1KM, _SIM_LNG, 500),  # closer
+    ]
+    result = matcher.find_similar(target, candidates)
+    assert len(result) == 2
+    assert result[0]["id"] == 2  # closer first
+    assert result[1]["id"] == 3
+    assert result[0]["distance_m"] < result[1]["distance_m"]

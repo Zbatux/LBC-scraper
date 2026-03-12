@@ -272,3 +272,196 @@ def test_get_annonces_non_regression_after_history_count_addition(client):
     ]
     for field in expected_fields:
         assert field in listing, f"Field missing from GET /api/annonces response: {field}"
+
+
+# ---------------------------------------------------------------------------
+# Similar listings endpoint tests
+# ---------------------------------------------------------------------------
+
+# ~1 km north of SAMPLE_LISTING GPS
+_NEARBY_LAT = 43.6 + 0.008983
+_NEARBY_LNG = 1.4
+
+NEARBY_LISTING = {
+    "titre": "Terrain voisin",
+    "prix": 45000.0,
+    "superficie": 480.0,
+    "prix_m2": 93.75,
+    "trajet": "18 min",
+    "lien": "https://www.leboncoin.fr/ad/2",
+    "lat": _NEARBY_LAT,
+    "lng": _NEARBY_LNG,
+    "date_publication": "2024-01-02T10:00:00",
+    "list_id": "1000002",
+}
+
+FAR_LISTING = {
+    "titre": "Terrain loin",
+    "prix": 40000.0,
+    "superficie": 500.0,
+    "prix_m2": 80.0,
+    "trajet": "25 min",
+    "lien": "https://www.leboncoin.fr/ad/3",
+    "lat": 44.0,
+    "lng": 1.4,
+    "date_publication": "2024-01-03T10:00:00",
+    "list_id": "1000003",
+}
+
+
+def _get_annonce_id(db_path, titre):
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT id FROM annonces WHERE titre = ?", (titre,)).fetchone()
+    conn.close()
+    return row["id"]
+
+
+def test_similar_returns_nearby_listings(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy()], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "target" in data
+    assert "similar" in data
+    assert "summary" in data
+    assert len(data["similar"]) == 1
+    assert data["summary"]["count"] == 1
+
+
+def test_similar_nonexistent_id_returns_404(client):
+    c, db_path = client
+
+    response = c.get("/api/annonces/99999/similar")
+
+    assert response.status_code == 404
+    assert "error" in response.get_json()
+
+
+def test_similar_no_gps_returns_400(client):
+    c, db_path = client
+    no_gps = SAMPLE_LISTING.copy()
+    no_gps["lat"] = None
+    no_gps["lng"] = None
+    no_gps["list_id"] = "1000010"
+    database.save_or_merge([no_gps], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    assert response.status_code == 400
+    assert "GPS" in response.get_json()["error"]
+
+
+def test_similar_no_results(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy(), FAR_LISTING.copy()], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["similar"] == []
+    assert data["summary"]["count"] == 0
+    assert data["summary"]["min_prix_m2"] is None
+    assert data["summary"]["max_prix_m2"] is None
+    assert data["summary"]["median_prix_m2"] is None
+
+
+def test_similar_summary_stats_correct(client):
+    c, db_path = client
+    nearby2 = NEARBY_LISTING.copy()
+    nearby2["titre"] = "Terrain voisin 2"
+    nearby2["prix_m2"] = 110.0
+    nearby2["list_id"] = "1000004"
+    nearby2["lat"] = _NEARBY_LAT + 0.001
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy(), nearby2], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    data = response.get_json()
+    summary = data["summary"]
+    assert summary["count"] == 2
+    assert summary["min_prix_m2"] == 93.75
+    assert summary["max_prix_m2"] == 110.0
+    # median of [93.75, 110.0] = 101.875
+    assert summary["median_prix_m2"] == 101.875
+
+
+def test_similar_includes_distance(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy()], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    data = response.get_json()
+    assert len(data["similar"]) == 1
+    assert "distance_m" in data["similar"][0]
+    assert isinstance(data["similar"][0]["distance_m"], int)
+
+
+def test_similar_sorted_by_distance(client):
+    c, db_path = client
+    nearby2 = NEARBY_LISTING.copy()
+    nearby2["titre"] = "Terrain plus loin"
+    nearby2["lat"] = 43.6 + 0.015  # ~1.7 km
+    nearby2["list_id"] = "1000005"
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy(), nearby2], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    data = response.get_json()
+    assert len(data["similar"]) == 2
+    assert data["similar"][0]["distance_m"] <= data["similar"][1]["distance_m"]
+
+
+def test_similar_excludes_self(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy()], db_name=db_path)
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    data = response.get_json()
+    similar_ids = [s["id"] for s in data["similar"]]
+    assert aid not in similar_ids
+
+
+def test_similar_nogo_excluded_from_stats(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy(), NEARBY_LISTING.copy()], db_name=db_path)
+    # Mark nearby listing as nogo
+    conn = sqlite3.connect(db_path)
+    conn.execute("UPDATE annonces SET nogo = 1 WHERE titre = ?", ("Terrain voisin",))
+    conn.commit()
+    conn.close()
+    aid = _get_annonce_id(db_path, "Terrain test")
+
+    response = c.get(f"/api/annonces/{aid}/similar")
+
+    data = response.get_json()
+    assert data["summary"]["count"] == 1  # still counted
+    # But stats are null because the only similar listing is nogo
+    assert data["summary"]["min_prix_m2"] is None
+
+
+def test_annonces_api_includes_lat_lng(client):
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    response = c.get("/api/annonces")
+
+    data = response.get_json()
+    listing = data[0]
+    assert "lat" in listing
+    assert "lng" in listing
+    assert listing["lat"] == 43.6
+    assert listing["lng"] == 1.4

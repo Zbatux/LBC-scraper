@@ -16,3 +16,6 @@ MAX_PAGES = 30  # ~35 annonces/page → 30 pages = 1050 annonces max
 
 GPS_MATCH_THRESHOLD_M = 50         # metres — fuzzy GPS proximity threshold
 AREA_MATCH_THRESHOLD_PCT = 0.10    # 10% — relative area difference threshold
+
+SIMILAR_GPS_RADIUS_M = 10000        # metres — radius for similar-lands search
+SIMILAR_AREA_TOLERANCE_PCT = 0.20  # 20% — area tolerance for similar-lands search
