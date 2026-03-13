@@ -161,6 +161,7 @@
     .status-changed   { background: #fef3c7; color: #92400e; }
     .status-reposted  { background: #dbeafe; color: #1e40af; }
     .status-unchanged { background: #f1f5f9; color: #94a3b8; font-weight: 400; }
+    .status-deleted   { background: #fee2e2; color: #991b1b; }
 
     /* note inline edit */
     .note-cell {
@@ -305,6 +306,10 @@
     <input type="checkbox" id="hideNogo" />
     Masquer nogo
   </label>
+  <label>
+    <input type="checkbox" id="hideDeleted" />
+    Masquer supprimées
+  </label>
   <span class="filter-sep">|</span>
   <label>Prix&nbsp;€ <input type="number" id="fPrixMin" placeholder="min" /></label>
   <label>–<input type="number" id="fPrixMax" placeholder="max" /></label>
@@ -351,6 +356,7 @@
       <option value="price_changed">Prix changé</option>
       <option value="reposted">Reposté</option>
       <option value="unchanged">Inchangé</option>
+      <option value="deleted">Supprimée</option>
     </select>
   </label>
   <button id="resetFilters">Réinitialiser</button>
@@ -445,6 +451,7 @@
     if (status === 'new')           return `<span class="status-badge status-new">nouveau</span>`;
     if (status === 'price_changed') return `<span class="status-badge status-changed">prix changé</span>`;
     if (status === 'reposted')      return `<span class="status-badge status-reposted">reposté</span>`;
+    if (status === 'deleted')       return `<span class="status-badge status-deleted">supprimée</span>`;
     return `<span class="status-badge status-unchanged">—</span>`; // unchanged, null, or unknown
   }
 
@@ -498,7 +505,8 @@
   }
 
   function getFiltered() {
-    const hideNogo   = document.getElementById("hideNogo").checked;
+    const hideNogo    = document.getElementById("hideNogo").checked;
+    const hideDeleted = document.getElementById("hideDeleted").checked;
     const prixMin    = parseFloat(document.getElementById("fPrixMin").value)   || null;
     const prixMax    = parseFloat(document.getElementById("fPrixMax").value)   || null;
     const surfMin    = parseFloat(document.getElementById("fSurfMin").value)   || null;
@@ -515,6 +523,7 @@
 
     return allData.filter(a => {
       if (hideNogo && a.nogo === 1) return false;
+      if (hideDeleted && a.status === 'deleted') return false;
       if (prixMin  != null && (a.prix       == null || a.prix       < prixMin))  return false;
       if (prixMax  != null && (a.prix       == null || a.prix       > prixMax))  return false;
       if (surfMin  != null && (a.superficie == null || a.superficie < surfMin))  return false;
@@ -991,10 +1000,22 @@
   });
 
   // ── Filters ──────────────────────────────────────────────────
-  ["hideNogo","fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
+  ["hideNogo","hideDeleted","fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
     .forEach(id => document.getElementById(id).addEventListener("input", render));
-  ["hideNogo","fViabilise","fConstruct","fAgricole","fStatus"].forEach(id =>
+  ["hideNogo","fViabilise","fConstruct","fAgricole"].forEach(id =>
     document.getElementById(id).addEventListener("change", render));
+  document.getElementById("hideDeleted").addEventListener("change", () => {
+    if (document.getElementById("hideDeleted").checked && document.getElementById("fStatus").value === "deleted") {
+      document.getElementById("fStatus").value = "";
+    }
+    render();
+  });
+  document.getElementById("fStatus").addEventListener("change", () => {
+    if (document.getElementById("fStatus").value === "deleted") {
+      document.getElementById("hideDeleted").checked = false;
+    }
+    render();
+  });
 
   document.getElementById("resetFilters").addEventListener("click", () => {
     ["fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
@@ -1002,6 +1023,7 @@
     ["fViabilise","fConstruct","fAgricole","fStatus"]
       .forEach(id => document.getElementById(id).value = "");
     document.getElementById("hideNogo").checked = false;
+    document.getElementById("hideDeleted").checked = false;
     render();
   });
 

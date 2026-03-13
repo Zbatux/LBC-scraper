@@ -5,12 +5,23 @@ from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
 from browser import accept_cookies
 
+DELETED_SENTINEL = "__DELETED__"
+
 
 def fetch_description(page: Page, url: str, is_first_page: bool = False) -> str | None:
-    """Visite une annonce et retourne sa description complète."""
+    """Visite une annonce et retourne sa description complète.
+
+    Retourne DELETED_SENTINEL si l'annonce est désactivée sur Leboncoin.
+    Retourne None en cas d'erreur (retry au prochain run).
+    """
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
         accept_cookies(page, is_first_page=is_first_page)
+
+        # Détection d'annonce désactivée (avant le wait_for_selector pour éviter 5s d'attente)
+        if page.locator("text=Cette annonce est désactivée").count():
+            page.wait_for_timeout(random.randint(800, 1500))
+            return DELETED_SENTINEL
 
         # Attendre le conteneur de description plutôt qu'un délai fixe
         desc_selector = (
@@ -55,7 +66,11 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
     """Parcourt les annonces sans description et les complète via Playwright."""
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, lien FROM annonces WHERE description IS NULL OR description = ''")
+    cursor.execute(
+        "SELECT id, lien FROM annonces "
+        "WHERE (description IS NULL OR description = '') "
+        "AND (status IS NULL OR status != 'deleted')"
+    )
     todo = cursor.fetchall()
     conn.close()
 
@@ -87,10 +102,21 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
         )
 
         updated = 0
+        deleted = 0
         for i, (ad_id, lien) in enumerate(todo, 1):
             print(f"  [{i}/{len(todo)}] {lien[:70]}")
             description = fetch_description(page, lien, is_first_page=(i == 1))
-            if description:
+            if description == DELETED_SENTINEL:
+                conn = sqlite3.connect(db_name)
+                conn.execute(
+                    "UPDATE annonces SET status = 'deleted', description = NULL WHERE id = ?",
+                    (ad_id,)
+                )
+                conn.commit()
+                conn.close()
+                deleted += 1
+                print("    🗑 Annonce désactivée, marquée comme supprimée")
+            elif description:
                 conn = sqlite3.connect(db_name)
                 conn.execute(
                     "UPDATE annonces SET description = ? WHERE id = ?",
@@ -105,4 +131,4 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
 
         browser.close()
 
-    print(f"  ✓ {updated}/{len(todo)} descriptions ajoutées.")
+    print(f"  ✓ {updated}/{len(todo)} descriptions ajoutées, {deleted} annonce(s) supprimée(s).")
