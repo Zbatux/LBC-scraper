@@ -61,15 +61,16 @@ def human_scroll(page: Page):
 def accept_cookies(page: Page, is_first_page: bool = False):
     try:
         selector = (
+            "button:has-text('Accepter & Fermer'), "
             "button:has-text('Tout accepter'), "
             "button:has-text('Accepter et fermer'), "
             "button[id*='accept'], "
             "button[aria-label*='accepter']"
         )
         if is_first_page:
-            # Première page : attendre que la modale apparaisse (max 3s)
+            # Première page : attendre que la modale apparaisse (max 8s, hydration Next.js)
             try:
-                page.wait_for_selector(selector, timeout=3000)
+                page.wait_for_selector(selector, timeout=8000)
             except PWTimeout:
                 return  # Pas de modale, on continue
         else:
