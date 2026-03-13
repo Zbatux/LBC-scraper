@@ -1,17 +1,31 @@
 import random
 import sqlite3
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 
 from browser import accept_cookies
 
 
-def fetch_description(page: Page, url: str) -> str | None:
+def fetch_description(page: Page, url: str, is_first_page: bool = False) -> str | None:
     """Visite une annonce et retourne sa description complète."""
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(random.randint(2000, 4000))
-        accept_cookies(page)
+        accept_cookies(page, is_first_page=is_first_page)
+
+        # Attendre le conteneur de description plutôt qu'un délai fixe
+        desc_selector = (
+            "[data-qa-id='adview_description_container'], "
+            "[data-testid='description'], "
+            "[class*='Description'], "
+            "div[itemprop='description']"
+        )
+        try:
+            page.wait_for_selector(desc_selector, timeout=5_000)
+        except PWTimeout:
+            pass  # Page sans description, on continue
+
+        # Délai anti-bot après résolution du sélecteur
+        page.wait_for_timeout(random.randint(800, 1500))
 
         # Clic sur "Voir plus" / "Voir la suite" si présent
         voir_plus = page.locator(
@@ -54,7 +68,7 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
             headless=False,
-            slow_mo=80,
+            slow_mo=50,
             args=["--disable-blink-features=AutomationControlled"],
         )
         ctx = browser.new_context(
@@ -75,7 +89,7 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
         updated = 0
         for i, (ad_id, lien) in enumerate(todo, 1):
             print(f"  [{i}/{len(todo)}] {lien[:70]}")
-            description = fetch_description(page, lien)
+            description = fetch_description(page, lien, is_first_page=(i == 1))
             if description:
                 conn = sqlite3.connect(db_name)
                 conn.execute(
@@ -86,7 +100,7 @@ def fetch_all_descriptions(db_name: str = "lbc_data.db"):
                 conn.close()
                 updated += 1
             # Pause entre les pages
-            delay = random.randint(4000, 9000)
+            delay = random.randint(2000, 5000)
             page.wait_for_timeout(delay)
 
         browser.close()

@@ -55,7 +55,7 @@ def main():
         with sync_playwright() as pw:
             browser = pw.chromium.launch(
                 headless=False,   # visible → meilleure chance de passer DataDome
-                slow_mo=120,      # chaque action Playwright prend 120ms minimum
+                slow_mo=60,       # chaque action Playwright prend 60ms minimum
                 args=["--disable-blink-features=AutomationControlled"],
             )
             ctx = browser.new_context(

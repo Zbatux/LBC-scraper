@@ -58,18 +58,42 @@ def human_scroll(page: Page):
         page.wait_for_timeout(random.randint(400, 900))
 
 
-def accept_cookies(page: Page):
+def accept_cookies(page: Page, is_first_page: bool = False):
     try:
-        btn = page.locator(
+        selector = (
             "button:has-text('Tout accepter'), "
             "button:has-text('Accepter et fermer'), "
-            "button[id*='accept']"
+            "button[id*='accept'], "
+            "button[aria-label*='accepter']"
         )
+        if is_first_page:
+            # Première page : attendre que la modale apparaisse (max 3s)
+            try:
+                page.wait_for_selector(selector, timeout=3000)
+            except PWTimeout:
+                return  # Pas de modale, on continue
+        else:
+            # Pages suivantes : laisser le temps à la modale de se charger si elle réapparaît
+            page.wait_for_timeout(random.randint(500, 1000))
+        btn = page.locator(selector)
         if btn.count():
             btn.first.click()
             page.wait_for_timeout(random.randint(1500, 2500))
-    except Exception:
-        pass
+            print("  ✓ Modale cookies fermée")
+
+            # Deuxième modale : "cookies solidaires" → clic sur "Je refuse"
+            try:
+                refuse_selector = "button:has-text('Je refuse')"
+                page.wait_for_selector(refuse_selector, timeout=3000)
+                refuse_btn = page.locator(refuse_selector)
+                if refuse_btn.count():
+                    refuse_btn.first.click()
+                    page.wait_for_timeout(random.randint(800, 1500))
+                    print("  ✓ Cookies solidaires refusés")
+            except PWTimeout:
+                pass  # Pas de deuxième modale
+    except Exception as e:
+        print(f"  ⚠ accept_cookies erreur: {e}")
 
 
 def extract_dom_ads(page: Page) -> list:
@@ -96,12 +120,13 @@ def extract_dom_ads(page: Page) -> list:
     return ads
 
 
-def scrape_page(page: Page, url: str) -> tuple:
+def scrape_page(page: Page, url: str, is_first_page: bool = False) -> tuple:
     print(f"  GET {url[:85]}...")
     page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-    page.wait_for_timeout(random.randint(2500, 4500))  # laisse le JS s'exécuter
-    accept_cookies(page)
-    human_scroll(page)  # simule lecture
+    # Petit délai post-navigation pour laisser les scripts anti-bot s'initialiser
+    page.wait_for_timeout(random.randint(800, 1500))
+    accept_cookies(page, is_first_page=is_first_page)
+    human_scroll(page)  # simule lecture + déclenche lazy-loading
 
     # Attendre les annonces
     try:
@@ -111,7 +136,6 @@ def scrape_page(page: Page, url: str) -> tuple:
             timeout=20_000,
         )
     except PWTimeout:
-        # Peut-être une page captcha → screenshot pour debug
         page.screenshot(path="debug_blocked.png")
         print("  ⚠ Annonces non trouvées → screenshot: debug_blocked.png")
 
@@ -133,7 +157,7 @@ def get_all_ads(page: Page) -> list:
 
     for p in range(1, MAX_PAGES + 1):
         url = SEARCH_URL + (f"&page={p}" if p > 1 else "")
-        ads, total = scrape_page(page, url)
+        ads, total = scrape_page(page, url, is_first_page=(p == 1))
 
         if not ads:
             print(f"  → Arrêt page {p} (aucune annonce)")
@@ -154,8 +178,8 @@ def get_all_ads(page: Page) -> list:
         if len(ads) < 35 and p > 1:
             break
 
-        # Pause inter-page : 8-18 s aléatoires
-        delay = random.randint(8000, 18000)
+        # Pause inter-page : 5-12 s aléatoires (compromis anti-bot)
+        delay = random.randint(5000, 12000)
         print(f"  ⏳ Pause {delay/1000:.1f}s avant page suivante...")
         page.wait_for_timeout(delay)
 
