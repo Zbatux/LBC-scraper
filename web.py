@@ -8,6 +8,7 @@ Endpoints :
   DELETE /api/annonces                 → Suppression bulk  { ids: [int, ...] }
   PATCH  /api/annonces/bulk            → Toggle bool bulk   { ids, field, value }
   PATCH  /api/annonces/<id>            → Mise à jour partielle d'une annonce
+  GET  /plu                            → Téléchargement PLU via APIs urbanisme
 
 Seuls les champs de la EDITABLE_FIELDS whitelist sont modifiables
 pour prévenir toute injection via nom de colonne.
@@ -20,6 +21,7 @@ import statistics
 from flask import Flask, jsonify, render_template, request
 
 import matcher
+import plu
 
 DB_NAME = "lbc_data.db"
 
@@ -258,6 +260,20 @@ def update_annonce(annonce_id):
     conn.commit()
     conn.close()
     return jsonify({"updated": 1})
+
+
+@app.route("/plu", methods=["GET"])
+def get_plu():
+    lat = request.args.get("lat", type=float)
+    lon = request.args.get("lon", type=float)
+    commune = request.args.get("commune")
+    if not commune and (lat is None or lon is None):
+        return jsonify({"error": "Provide lat+lon or commune parameter"}), 400
+    result = plu.get_plu_info(lat=lat, lon=lon, commune=commune)
+    if "error" in result:
+        status = 502 if "communication" in result["error"] else 404
+        return jsonify(result), status
+    return jsonify(result)
 
 
 # ---------------------------------------------------------------------------

@@ -19,3 +19,6 @@ AREA_MATCH_THRESHOLD_PCT = 0.10    # 10% — relative area difference threshold
 
 SIMILAR_GPS_RADIUS_M = 10000        # metres — radius for similar-lands search
 SIMILAR_AREA_TOLERANCE_PCT = 0.20  # 20% — area tolerance for similar-lands search
+
+GEO_API_COMMUNES_URL = "https://geo.api.gouv.fr/communes"
+GPU_DOCUMENT_URL = "https://www.geoportail-urbanisme.gouv.fr/api/document"
