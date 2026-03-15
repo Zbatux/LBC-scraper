@@ -485,7 +485,10 @@
     if (!t || t === "N/A") return Infinity;
     let m = 0;
     const h = t.match(/(\d+)h/);   if (h) m += parseInt(h[1]) * 60;
-    const mn = t.match(/(\d+)min/); if (mn) m += parseInt(mn[1]);
+    const mn = t.match(/(\d+)\s*min/);
+    if (mn) m += parseInt(mn[1], 10);
+    else if (h) { const rest = t.match(/h\s*(\d+)/); if (rest) m += parseInt(rest[1], 10); }
+    else if (/^\s*\d+\s*$/.test(t)) m = parseInt(t, 10);
     return m;
   }
 
