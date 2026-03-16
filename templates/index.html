@@ -299,6 +299,42 @@
     }
     .plu-btn:hover { background: #b45309; }
     .plu-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .comment-btn {
+      padding: 3px 8px; background: #8b5cf6; color: #fff; border: none;
+      border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;
+      font-weight: 600;
+    }
+    .comment-btn:hover { background: #7c3aed; }
+    .comment-btn.has-comment {
+      background: #7c3aed;
+      box-shadow: 0 0 0 2px #c4b5fd;
+    }
+    .comment-btn.has-comment:hover { background: #6d28d9; }
+
+    .comment-textarea {
+      width: 100%; min-height: 150px; padding: 10px;
+      border: 1px solid #cbd5e1; border-radius: 6px;
+      font-family: inherit; font-size: 13px; resize: vertical;
+    }
+    .comment-textarea:focus {
+      outline: none; border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, .15);
+    }
+    .comment-actions {
+      display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;
+    }
+    .comment-save-btn {
+      padding: 6px 16px; background: #8b5cf6; color: #fff; border: none;
+      border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .comment-save-btn:hover { background: #7c3aed; }
+    .comment-cancel-btn {
+      padding: 6px 16px; background: #f1f5f9; color: #64748b;
+      border: 1px solid #cbd5e1; border-radius: 4px;
+      font-size: 12px; cursor: pointer;
+    }
+    .comment-cancel-btn:hover { background: #e2e8f0; }
   </style>
 </head>
 <body>
@@ -433,6 +469,23 @@
       <button id="cmpClose" aria-label="Fermer">✕</button>
     </div>
     <div class="modal-body" id="cmpBody"></div>
+  </div>
+</div>
+
+<!-- Comment modal -->
+<div id="commentModal" class="modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-label="Commentaire">
+  <div class="modal-dialog" style="max-width:560px">
+    <div class="modal-header">
+      <span id="commentTitle">Commentaire</span>
+      <button id="commentClose" aria-label="Fermer">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="commentTextarea" class="comment-textarea" placeholder="Ajouter un commentaire..." maxlength="2000"></textarea>
+      <div class="comment-actions">
+        <button class="comment-cancel-btn" id="commentCancel">Annuler</button>
+        <button class="comment-save-btn" id="commentSave">Enregistrer</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -595,7 +648,7 @@
         <td>${a.emprise_sol != null ? fmt(a.emprise_sol, 1) + "%" : "—"}</td>
         <td class="note-cell" data-id="${a.id}">${renderNote(a.note)}</td>
         <td class="nogo-cell">${badge(a.nogo)}</td>
-        <td>${a.history_count > 0
+        <td><button class="comment-btn${a.commentaire ? ' has-comment' : ''}" data-id="${a.id}" aria-label="Commentaire">${String.fromCodePoint(0x1F4AC)}</button> ${a.history_count > 0
           ? `<button class="hist-btn" data-id="${a.id}">📋 ${a.history_count}</button>`
           : ""
         }${a.lat != null && a.lng != null
@@ -653,6 +706,14 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         openCompareModal(parseInt(btn.dataset.id));
+      });
+    });
+
+    // Comment trigger
+    document.querySelectorAll(".comment-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openCommentModal(parseInt(btn.dataset.id));
       });
     });
 
@@ -722,6 +783,7 @@
   // ── History modal ─────────────────────────────────────────────
   async function openHistoryModal(id) {
     closeCompareModal();
+    closeCommentModal(true);
     const ann = allData.find(x => x.id === id);
     document.getElementById("modalTitle").textContent =
       ann ? `Historique — ${ann.titre || "annonce #" + id}` : `Historique #${id}`;
@@ -789,6 +851,7 @@
   // ── Compare modal ───────────────────────────────────────────────
   async function openCompareModal(id) {
     closeHistoryModal();
+    closeCommentModal(true);
     const ann = allData.find(x => x.id === id);
     document.getElementById("cmpTitle").textContent =
       ann ? `Comparaison — ${ann.titre || "annonce #" + id}` : `Comparaison #${id}`;
@@ -938,6 +1001,66 @@
     cmpSortDir = 1;
   }
 
+  // ── Comment modal ──────────────────────────────────────────────
+  let commentCurrentId = null;
+  let commentOriginal = null;
+
+  function openCommentModal(id) {
+    closeHistoryModal();
+    closeCompareModal();
+    const ann = allData.find(x => x.id === id);
+    commentCurrentId = id;
+    commentOriginal = ann ? (ann.commentaire || "") : "";
+    document.getElementById("commentTitle").textContent =
+      ann ? `Commentaire — ${ann.titre || "annonce #" + id}` : `Commentaire #${id}`;
+    document.getElementById("commentTextarea").value = commentOriginal;
+    document.getElementById("commentModal").style.display = "flex";
+    document.getElementById("commentTextarea").focus();
+  }
+
+  function closeCommentModal(force) {
+    if (commentCurrentId === null) return; // modal not open
+    const textarea = document.getElementById("commentTextarea");
+    if (!force && textarea.value !== commentOriginal) {
+      if (!confirm("Fermer sans enregistrer les modifications ?")) return;
+    }
+    document.getElementById("commentModal").style.display = "none";
+    textarea.value = "";
+    commentCurrentId = null;
+    commentOriginal = null;
+  }
+
+  async function saveComment() {
+    const textarea = document.getElementById("commentTextarea");
+    const raw = textarea.value.trim();
+    const value = raw === "" ? null : raw;
+
+    // Skip PATCH if value unchanged
+    if (value === (allData.find(x => x.id === commentCurrentId)?.commentaire || null)) {
+      closeCommentModal(true);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/annonces/${commentCurrentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentaire: value }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Erreur lors de l'enregistrement du commentaire.");
+        return;
+      }
+      const ann = allData.find(x => x.id === commentCurrentId);
+      if (ann) ann.commentaire = value;
+      closeCommentModal(true);
+      render();
+    } catch (err) {
+      alert("Erreur réseau lors de l'enregistrement du commentaire.");
+    }
+  }
+
   // ── API calls ────────────────────────────────────────────────
   async function patchOne(id, fields) {
     await fetch(`/api/annonces/${id}`, {
@@ -1081,8 +1204,14 @@
   document.getElementById("compareModal").addEventListener("click", function(e) {
     if (e.target === this) closeCompareModal();
   });
+  document.getElementById("commentClose").addEventListener("click", () => closeCommentModal());
+  document.getElementById("commentCancel").addEventListener("click", () => closeCommentModal());
+  document.getElementById("commentSave").addEventListener("click", saveComment);
+  document.getElementById("commentModal").addEventListener("click", function(e) {
+    if (e.target === this) closeCommentModal();
+  });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeHistoryModal(); closeCompareModal(); }
+    if (e.key === "Escape") { closeHistoryModal(); closeCompareModal(); closeCommentModal(); }
   });
 
   // ── Init ─────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import plu
 DB_NAME = "lbc_data.db"
 
 # Whitelist des colonnes éditables (protection contre l'injection de nom de colonne)
-EDITABLE_FIELDS = {"note", "nogo", "viabilise", "partiellement_constructible", "partiellement_agricole"}
+EDITABLE_FIELDS = {"note", "nogo", "viabilise", "partiellement_constructible", "partiellement_agricole", "commentaire"}
 
 app = Flask(__name__)
 
@@ -53,6 +53,7 @@ def ensure_columns():
             "ALTER TABLE annonces ADD COLUMN status TEXT",
             "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
             "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
+            "ALTER TABLE annonces ADD COLUMN commentaire TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -116,7 +117,7 @@ def get_annonces():
         rows = conn.execute(
             "SELECT a.id, a.titre, a.prix, a.superficie, a.prix_m2, a.trajet, a.lien, "
             "a.viabilise, a.emprise_sol, a.partiellement_constructible, a.partiellement_agricole, "
-            "a.analyse_faite, a.nogo, a.note, a.lat, a.lng, "
+            "a.analyse_faite, a.nogo, a.note, a.commentaire, a.lat, a.lng, "
             "a.status, a.first_seen, a.date_publication, "
             "(SELECT COUNT(*) FROM annonces_history WHERE annonce_id = a.id) AS history_count "
             "FROM annonces a ORDER BY a.id"
@@ -216,6 +217,9 @@ def bulk_update():
         return jsonify({"error": "ids must be a non-empty list of integers"}), 400
     if field not in EDITABLE_FIELDS:
         return jsonify({"error": f"field '{field}' is not editable"}), 400
+    # Text fields cannot be bulk-toggled (only boolean fields support 0/1 toggle)
+    if field == "commentaire":
+        return jsonify({"error": "commentaire cannot be bulk-updated"}), 400
     if value not in (0, 1):
         return jsonify({"error": "value must be 0 or 1"}), 400
 
@@ -245,8 +249,14 @@ def update_annonce(annonce_id):
         if note is not None and not (isinstance(note, int) and 1 <= note <= 10):
             return jsonify({"error": "note must be an integer between 1 and 10, or null"}), 400
 
+    # Validate commentaire (text field)
+    if "commentaire" in updates:
+        val = updates["commentaire"]
+        if val is not None and not isinstance(val, str):
+            return jsonify({"error": "commentaire must be a string or null"}), 400
+
     # Validate boolean fields
-    for bool_field in EDITABLE_FIELDS - {"note"}:
+    for bool_field in EDITABLE_FIELDS - {"note", "commentaire"}:
         if bool_field in updates and updates[bool_field] not in (0, 1, None):
             return jsonify({"error": f"{bool_field} must be 0, 1, or null"}), 400
 

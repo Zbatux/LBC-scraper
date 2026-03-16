@@ -110,6 +110,7 @@ def save_to_database(data, db_name="lbc_data.db"):
             "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
             "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
             "ALTER TABLE annonces ADD COLUMN list_id TEXT",
+            "ALTER TABLE annonces ADD COLUMN commentaire TEXT",
         ]
         for sql in migrations:
             try:
@@ -214,6 +215,7 @@ def save_or_merge(data, db_name="lbc_data.db"):
             "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
             "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
             "ALTER TABLE annonces ADD COLUMN list_id TEXT",
+            "ALTER TABLE annonces ADD COLUMN commentaire TEXT",
         ]
         for sql in migrations:
             try:
