@@ -5,9 +5,9 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 from analyzer import analyze_all
-from browser import get_all_ads
+from browser import create_browser_context, get_all_ads
 from database import process, save_or_merge
-from descriptions import fetch_all_descriptions
+from descriptions import check_all_statuses, fetch_all_descriptions
 from exporter import export_to_csv
 
 
@@ -32,6 +32,11 @@ def main():
         help="Visite les annonces sans description et récupère leur texte descriptif.",
     )
     parser.add_argument(
+        "--check-status",
+        action="store_true",
+        help="Vérifie si les annonces sont toujours en ligne et marque les désactivées.",
+    )
+    parser.add_argument(
         "--analyze",
         action="store_true",
         help="Analyse les descriptions via Ollama (gemma3:12b) et remplit les champs IA.",
@@ -43,7 +48,7 @@ def main():
     )
     args = parser.parse_args()
 
-    if not args.scrape and not args.export_csv and not args.get_description and not args.analyze and not args.web:
+    if not args.scrape and not args.export_csv and not args.get_description and not args.check_status and not args.analyze and not args.web:
         parser.print_help()
         return
 
@@ -53,27 +58,7 @@ def main():
 
     if args.scrape:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(
-                headless=False,   # visible → meilleure chance de passer DataDome
-                slow_mo=60,       # chaque action Playwright prend 60ms minimum
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            ctx = browser.new_context(
-                viewport={"width": 1280, "height": 900},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                ),
-                locale="fr-FR",
-                timezone_id="Europe/Paris",
-            )
-            page = ctx.new_page()
-
-            # Masque la propriété webdriver
-            page.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            )
+            browser, ctx, page = create_browser_context(pw, slow_mo=60)
 
             print("\n[1/2] Récupération des annonces...")
             raw = get_all_ads(page)
@@ -109,6 +94,10 @@ def main():
     if args.get_description:
         print("\nRécupération des descriptions manquantes...")
         fetch_all_descriptions()
+
+    if args.check_status:
+        print("\nVérification du statut des annonces...")
+        check_all_statuses()
 
     if args.analyze:
         print("\nAnalyse IA des descriptions (Ollama)...")

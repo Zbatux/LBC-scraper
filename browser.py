@@ -152,6 +152,30 @@ def scrape_page(page: Page, url: str, is_first_page: bool = False) -> tuple:
     return extract_dom_ads(page), 0
 
 
+def create_browser_context(pw, slow_mo: int = 50):
+    """Create a Playwright browser + context + page with anti-bot settings."""
+    browser = pw.chromium.launch(
+        headless=False,
+        slow_mo=slow_mo,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    ctx = browser.new_context(
+        viewport={"width": 1280, "height": 900},
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        locale="fr-FR",
+        timezone_id="Europe/Paris",
+    )
+    page = ctx.new_page()
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
+    return browser, ctx, page
+
+
 def get_all_ads(page: Page) -> list:
     all_ads = []
     total_announced = 0
