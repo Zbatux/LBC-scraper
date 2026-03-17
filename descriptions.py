@@ -80,32 +80,29 @@ def check_listing_status(page: Page, url: str, is_first_page: bool = False) -> s
     """Visit a listing URL and check if it is disabled.
 
     Returns:
-        'deleted'      — listing shows a disabled/removed banner
+        'deleted'      — listing is disabled/removed or page has no valid listing content
         'online'       — listing page loaded with valid content
-        'inconclusive' — page did not load properly (anti-bot block, network error)
+        'inconclusive' — network error or exception prevented verification
     """
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
         accept_cookies(page, is_first_page=is_first_page)
 
-        # Wait for either the disabled banner or a valid listing marker (F4)
+        # Wait for either the disabled banner or a valid listing marker
         combined_selector = f"{DISABLED_SELECTORS}, {VALID_LISTING_SELECTORS}"
         try:
             page.wait_for_selector(combined_selector, timeout=8_000)
         except PWTimeout:
-            pass  # Neither found — will be inconclusive
+            pass  # Neither found — page loaded but no listing content → deleted
 
         page.wait_for_timeout(random.randint(800, 1500))
 
-        # Check for disabled/removed banner (F3: multiple variants)
-        if page.locator(DISABLED_SELECTORS).count():
-            return "deleted"
-
-        # Check for valid listing markers (F6: tightened selectors)
+        # Check for valid listing markers first — if present, listing is online
         if page.locator(VALID_LISTING_SELECTORS).count():
             return "online"
 
-        return "inconclusive"
+        # Page loaded but no valid listing content → treat as deleted
+        return "deleted"
     except Exception as e:
         print(f"    ⚠ Erreur vérification ({url[:60]}): {e}")
         return "inconclusive"
