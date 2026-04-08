@@ -62,11 +62,16 @@ def fetch_description(page: Page, url: str, is_first_page: bool = False) -> str 
     return None
 
 
-DISABLED_SELECTORS = (
-    "text=Cette annonce est désactivée, "
-    "text=Cette annonce n'est plus disponible, "
-    "text=Annonce introuvable"
-)
+# Primary markers — each one alone is sufficient to confirm deletion
+DELETED_MARKERS = [
+    "text=Cette annonce est désactivée",
+    "text=Cette annonce n'est plus disponible",
+    "text=Annonce introuvable",
+]
+
+# Secondary marker — only confirms deletion when NO valid listing content is present
+# (this text can appear on error/maintenance pages too, so it's not sufficient alone)
+DELETED_MARKER_SECONDARY = "text=Retour à la page d'accueil"
 
 VALID_LISTING_SELECTORS = (
     "[data-qa-id='adview_description_container'], "
@@ -80,29 +85,43 @@ def check_listing_status(page: Page, url: str, is_first_page: bool = False) -> s
     """Visit a listing URL and check if it is disabled.
 
     Returns:
-        'deleted'      — listing is disabled/removed or page has no valid listing content
+        'deleted'      — listing shows explicit deletion markers
         'online'       — listing page loaded with valid content
-        'inconclusive' — network error or exception prevented verification
+        'inconclusive' — could not determine status (anti-bot, error, etc.)
     """
     try:
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
         accept_cookies(page, is_first_page=is_first_page)
 
-        # Wait for either the disabled banner or a valid listing marker
-        combined_selector = f"{DISABLED_SELECTORS}, {VALID_LISTING_SELECTORS}"
+        # Anti-bot delay, let page render
+        page.wait_for_timeout(random.randint(800, 1500) if is_first_page else random.randint(500, 1000))
+
+        # 1) Check primary deletion markers FIRST (fast path)
+        for marker in DELETED_MARKERS:
+            if page.locator(marker).count() > 0:
+                return "deleted"
+
+        # 2) Wait for valid content using CSS-only selectors
         try:
-            page.wait_for_selector(combined_selector, timeout=8_000)
+            page.wait_for_selector(VALID_LISTING_SELECTORS, timeout=15_000)
         except PWTimeout:
-            pass  # Neither found — page loaded but no listing content → deleted
+            pass
 
-        page.wait_for_timeout(random.randint(800, 1500))
-
-        # Check for valid listing markers first — if present, listing is online
-        if page.locator(VALID_LISTING_SELECTORS).count():
+        # 3) Check valid content
+        if page.locator(VALID_LISTING_SELECTORS).count() > 0:
             return "online"
 
-        # Page loaded but no valid listing content → treat as deleted
-        return "deleted"
+        # 4) Re-check primary deletion markers (may have rendered during the 15s wait)
+        for marker in DELETED_MARKERS:
+            if page.locator(marker).count() > 0:
+                return "deleted"
+
+        # 5) Check secondary deletion marker (only when no valid content found)
+        if page.locator(DELETED_MARKER_SECONDARY).count() > 0:
+            return "deleted"
+
+        # 6) Neither deletion markers nor valid content found
+        return "inconclusive"
     except Exception as e:
         print(f"    ⚠ Erreur vérification ({url[:60]}): {e}")
         return "inconclusive"
@@ -127,6 +146,7 @@ def check_all_statuses(db_name: str = "lbc_data.db"):
 
     deleted = 0
     skipped = 0
+    inconclusive_list = []
 
     try:
         with sync_playwright() as pw:
@@ -148,16 +168,22 @@ def check_all_statuses(db_name: str = "lbc_data.db"):
                         print("    ✓ En ligne")
                     else:
                         skipped += 1
-                        print("    ⚠ Page non vérifiable (anti-bot ou erreur), ignorée")
+                        inconclusive_list.append(lien)
+                        print("    ⚠ Ignorée")
 
-                    delay = random.randint(2000, 5000)
-                    page.wait_for_timeout(delay)
+                    if i < total:
+                        delay = random.randint(2000, 5000) if i == 1 else random.randint(1000, 3000)
+                        page.wait_for_timeout(delay)
             finally:
                 browser.close()
     finally:
         conn.close()
 
     print(f"  ✓ Vérification terminée : {deleted} supprimée(s), {skipped} ignorée(s) sur {total} vérifiée(s).")
+    if inconclusive_list:
+        print("  ⚠ Annonces non vérifiables (anti-bot ou erreur) :")
+        for lien in inconclusive_list:
+            print(f"    - {lien}")
 
 
 def fetch_all_descriptions(db_name: str = "lbc_data.db"):
