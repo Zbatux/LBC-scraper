@@ -342,6 +342,7 @@
 <header>
   <h1>LBC Scraper — Annonces</h1>
   <span id="counter">Chargement…</span>
+  <a id="mapLink" href="/map" style="padding:4px 10px;background:#2563eb;color:#fff;border-radius:4px;text-decoration:none;font-size:13px;">Carte</a>
 </header>
 
 <!-- Filters -->
@@ -664,6 +665,61 @@
 
     bindRowEvents();
     updateToolbar();
+    saveFilters();
+  }
+
+  // ── Filter persistence ───────────────────────────────────────
+  function saveFilters() {
+    const v = id => document.getElementById(id).value;
+    const state = {
+      hideNogo:    document.getElementById("hideNogo").checked,
+      hideDeleted: document.getElementById("hideDeleted").checked,
+      fPrixMin:    v("fPrixMin"),
+      fPrixMax:    v("fPrixMax"),
+      fSurfMin:    v("fSurfMin"),
+      fSurfMax:    v("fSurfMax"),
+      fPm2Min:     v("fPm2Min"),
+      fPm2Max:     v("fPm2Max"),
+      fTrajetMax:  v("fTrajetMax"),
+      fNoteMin:    v("fNoteMin"),
+      fViabilise:  v("fViabilise"),
+      fConstruct:  v("fConstruct"),
+      fAgricole:   v("fAgricole"),
+      fStatus:     v("fStatus"),
+      sortCol:     sortCol,
+      sortDir:     sortDir,
+    };
+    try { localStorage.setItem("lbc_filters", JSON.stringify(state)); } catch { /* quota / private mode */ }
+  }
+
+  function loadFilters() {
+    let raw;
+    try { raw = localStorage.getItem("lbc_filters"); } catch { return; }
+    if (!raw) return;
+    let state;
+    try { state = JSON.parse(raw); } catch { return; }
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ""; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    setChk("hideNogo",    state.hideNogo);
+    setChk("hideDeleted", state.hideDeleted);
+    set("fPrixMin",   state.fPrixMin);
+    set("fPrixMax",   state.fPrixMax);
+    set("fSurfMin",   state.fSurfMin);
+    set("fSurfMax",   state.fSurfMax);
+    set("fPm2Min",    state.fPm2Min);
+    set("fPm2Max",    state.fPm2Max);
+    set("fTrajetMax", state.fTrajetMax);
+    set("fNoteMin",   state.fNoteMin);
+    set("fViabilise", state.fViabilise);
+    set("fConstruct", state.fConstruct);
+    set("fAgricole",  state.fAgricole);
+    set("fStatus",    state.fStatus);
+    if (state.sortCol) {
+      sortCol = state.sortCol;
+      sortDir = state.sortDir ?? 1;
+      const th = document.querySelector(`thead th[data-col="${sortCol}"]`);
+      if (th) th.classList.add(sortDir === 1 ? "sorted-asc" : "sorted-desc");
+    }
   }
 
   function renderNote(note) {
@@ -1186,6 +1242,11 @@
   });
 
   document.getElementById("resetFilters").addEventListener("click", () => {
+    localStorage.removeItem("lbc_filters");
+    sortCol = null;
+    sortDir = 1;
+    document.querySelectorAll("thead th.sorted-asc, thead th.sorted-desc")
+      .forEach(th => th.classList.remove("sorted-asc", "sorted-desc"));
     ["fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
       .forEach(id => document.getElementById(id).value = "");
     ["fViabilise","fConstruct","fAgricole","fStatus"]
@@ -1193,6 +1254,27 @@
     document.getElementById("hideNogo").checked = false;
     document.getElementById("hideDeleted").checked = false;
     render();
+  });
+
+  // ── Map link: pass current filters as query params ───────────
+  document.getElementById("mapLink").addEventListener("click", function(e) {
+    e.preventDefault();
+    const p = new URLSearchParams();
+    const v = id => document.getElementById(id).value;
+    if (v("fPrixMin"))   p.set("fPrixMin",   v("fPrixMin"));
+    if (v("fPrixMax"))   p.set("fPrixMax",   v("fPrixMax"));
+    if (v("fSurfMin"))   p.set("fSurfMin",   v("fSurfMin"));
+    if (v("fSurfMax"))   p.set("fSurfMax",   v("fSurfMax"));
+    if (v("fPm2Min"))    p.set("fPm2Min",    v("fPm2Min"));
+    if (v("fPm2Max"))    p.set("fPm2Max",    v("fPm2Max"));
+    if (v("fTrajetMax")) p.set("fTrajetMax", v("fTrajetMax"));
+    if (v("fNoteMin"))   p.set("fNoteMin",   v("fNoteMin"));
+    if (v("fViabilise")) p.set("fViabilise", v("fViabilise"));
+    if (v("fConstruct")) p.set("fConstruct", v("fConstruct"));
+    if (v("fAgricole"))  p.set("fAgricole",  v("fAgricole"));
+    if (v("fStatus"))    p.set("fStatus",    v("fStatus"));
+    const qs = p.toString();
+    window.open("/map" + (qs ? "?" + qs : ""), "_blank");
   });
 
   // ── Modal close handlers (bound once at init) ────────────────
@@ -1215,6 +1297,7 @@
   });
 
   // ── Init ─────────────────────────────────────────────────────
+  loadFilters();
   loadData();
 </script>
 </body>

@@ -110,6 +110,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/map")
+def map_view():
+    return render_template("map.html")
+
+
 @app.route("/api/annonces", methods=["GET"])
 def get_annonces():
     conn = get_db()

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carte des annonces</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+    #header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 16px; background: #1e293b; color: #f8fafc;
+      font-size: 14px; flex-shrink: 0;
+    }
+    #header a {
+      color: #94a3b8; text-decoration: none; font-size: 13px;
+    }
+    #header a:hover { color: #f8fafc; }
+    #badge {
+      margin-left: auto; background: #334155; color: #cbd5e1;
+      padding: 3px 10px; border-radius: 12px; font-size: 12px;
+    }
+    #map { flex: 1; }
+    #empty-overlay {
+      display: none; position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.92); padding: 20px 32px;
+      border-radius: 8px; font-size: 15px; color: #475569;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 1000; /* above Leaflet layers (max ~600) */
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <a href="/">← Annonces</a>
+    <span>Carte des annonces</span>
+    <span id="badge">Chargement…</span>
+  </div>
+  <div style="position:relative; flex:1; display:flex; flex-direction:column;">
+    <div id="map"></div>
+    <div id="empty-overlay">Aucune annonce à afficher sur la carte</div>
+  </div>
+
+  <script>
+    // NOTE: trajetToMin, matchBool, parseBoolFilter are duplicated from index.html (no bundler).
+    // If you update these in index.html, update them here too.
+    function trajetToMin(t) {
+      if (!t || t === "N/A") return Infinity;
+      let m = 0;
+      const h = t.match(/(\d+)h/);   if (h) m += parseInt(h[1]) * 60;
+      const mn = t.match(/(\d+)\s*min/);
+      if (mn) m += parseInt(mn[1], 10);
+      else if (h) { const rest = t.match(/h\s*(\d+)/); if (rest) m += parseInt(rest[1], 10); }
+      else if (/^\s*\d+\s*$/.test(t)) m = parseInt(t, 10);
+      return m;
+    }
+
+    function matchBool(filterVal, colVal) {
+      if (filterVal === null) return true;
+      if (filterVal === "null") return colVal == null;
+      return colVal === filterVal;
+    }
+
+    // Adapted version: accepts string from URLSearchParams (not a DOM element id)
+    function parseBoolFilter(strVal) {
+      if (!strVal) return null;          // absent param → no filter
+      if (strVal === "null") return "null"; // "?" option
+      return parseInt(strVal);           // "0" or "1" → integer
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const map = L.map('map').setView([46.6, 2.3], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+      }).addTo(map);
+      const group = L.featureGroup().addTo(map);
+
+      const params = new URLSearchParams(window.location.search);
+
+      // Read filter params
+      const _pf = s => { const v = parseFloat(s); return isNaN(v) ? null : v; };
+      const _pi = s => { const v = parseInt(s); return isNaN(v) ? null : v; };
+      const prixMin    = _pf(params.get('fPrixMin'));
+      const prixMax    = _pf(params.get('fPrixMax'));
+      const surfMin    = _pf(params.get('fSurfMin'));
+      const surfMax    = _pf(params.get('fSurfMax'));
+      const pm2Min     = _pf(params.get('fPm2Min'));
+      const pm2Max     = _pf(params.get('fPm2Max'));
+      const trajetMax  = params.get('fTrajetMax') || null;
+      const noteMin    = _pi(params.get('fNoteMin'));
+      const trajetMaxMin = trajetMax ? trajetToMin(trajetMax) : null;
+      const fViab  = parseBoolFilter(params.get('fViabilise'));
+      const fConst = parseBoolFilter(params.get('fConstruct'));
+      const fAgri  = parseBoolFilter(params.get('fAgricole'));
+      const fStatus = params.get('fStatus') || null;
+
+      let data;
+      try {
+        const res = await fetch('/api/annonces');
+        data = await res.json();
+        if (!Array.isArray(data)) throw new Error('Unexpected response format');
+      } catch (e) {
+        document.getElementById('badge').textContent = 'Erreur de chargement';
+        return;
+      }
+
+      data.forEach(a => {
+        // Baseline exclusion — always applied regardless of filter params
+        if (a.status === 'deleted') return;
+        if (a.nogo === 1) return;
+
+        if (prixMin  != null && (a.prix       == null || a.prix       < prixMin))  return;
+        if (prixMax  != null && (a.prix       == null || a.prix       > prixMax))  return;
+        if (surfMin  != null && (a.superficie == null || a.superficie < surfMin))  return;
+        if (surfMax  != null && (a.superficie == null || a.superficie > surfMax))  return;
+        if (pm2Min   != null && (a.prix_m2    == null || a.prix_m2    < pm2Min))   return;
+        if (pm2Max   != null && (a.prix_m2    == null || a.prix_m2    > pm2Max))   return;
+        if (trajetMaxMin != null && trajetToMin(a.trajet) > trajetMaxMin)          return;
+        if (noteMin  != null && (a.note == null || a.note < noteMin))              return;
+        if (!matchBool(fViab,  a.viabilise))                                       return;
+        if (!matchBool(fConst, a.partiellement_constructible))                     return;
+        if (!matchBool(fAgri,  a.partiellement_agricole))                          return;
+        if (fStatus && a.status !== fStatus)                                        return;
+
+        // Skip listings without coordinates
+        if (a.lat == null || a.lng == null) return;
+
+        const esc    = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const marker = L.marker([a.lat, a.lng]);
+        const prix   = a.prix       != null ? a.prix.toLocaleString('fr-FR') + ' €'        : null;
+        const surf   = a.superficie != null ? a.superficie.toLocaleString('fr-FR') + ' m²' : null;
+        const trajet = a.trajet     != null ? a.trajet : null;
+        const lines  = [`<strong>${esc(a.titre || 'Annonce')}</strong>`];
+        lines.push(prix ?? 'Prix N/A');
+        if (surf)   lines.push(surf);
+        if (trajet) lines.push(esc(trajet));
+        marker.bindTooltip(lines.join('<br>'), { sticky: true, direction: 'top', maxWidth: 300 });
+        marker.on('click', () => { if (a.lien) window.open(a.lien, '_blank'); });
+        group.addLayer(marker);
+      });
+
+      const count = group.getLayers().length;
+      const pl = count !== 1;
+      document.getElementById('badge').textContent = count + (pl ? ' annonces affichées' : ' annonce affichée');
+
+      if (count > 0) {
+        map.fitBounds(group.getBounds());
+      } else {
+        document.getElementById('empty-overlay').style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
