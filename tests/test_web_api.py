@@ -453,6 +453,27 @@ def test_similar_nogo_excluded_from_stats(client):
     assert data["summary"]["min_prix_m2"] is None
 
 
+# ---------------------------------------------------------------------------
+# Right-click NoGo: PATCH /api/annonces/<id> with nogo=1
+# ---------------------------------------------------------------------------
+
+def test_patch_nogo(client):
+    """PATCH {nogo: 1} sets nogo column to 1 in DB and returns 200."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+    conn = sqlite3.connect(db_path)
+    annonce_id = conn.execute("SELECT id FROM annonces LIMIT 1").fetchone()[0]
+    conn.close()
+
+    res = c.patch(f"/api/annonces/{annonce_id}", json={"nogo": 1})
+
+    assert res.status_code == 200
+    conn = sqlite3.connect(db_path)
+    row = conn.execute("SELECT nogo FROM annonces WHERE id=?", (annonce_id,)).fetchone()
+    conn.close()
+    assert row[0] == 1
+
+
 def test_annonces_api_includes_lat_lng(client):
     c, db_path = client
     database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)

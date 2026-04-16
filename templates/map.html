@@ -72,6 +72,28 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
+      const ctxMenu = document.getElementById('ctx-menu');
+      let _ctxCallback = null;
+      function showMenu(x, y, cb) {
+        _ctxCallback = cb;
+        ctxMenu.style.left = x + 'px';
+        ctxMenu.style.top  = y + 'px';
+        ctxMenu.style.display = 'block';
+      }
+      function hideMenu() {
+        ctxMenu.style.display = 'none';
+        _ctxCallback = null;
+      }
+      document.getElementById('ctx-nogo').addEventListener('click', () => {
+        const cb = _ctxCallback;
+        hideMenu();
+        if (cb) cb();
+      });
+      document.addEventListener('click', e => {
+        if (!ctxMenu.contains(e.target)) hideMenu();
+      });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') hideMenu(); });
+
       const map = L.map('map').setView([46.6, 2.3], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -140,6 +162,28 @@
         if (trajet) lines.push(esc(trajet));
         marker.bindTooltip(lines.join('<br>'), { sticky: true, direction: 'top', maxWidth: 300 });
         marker.on('click', () => { if (a.lien) window.open(a.lien, '_blank'); });
+        marker.on('contextmenu', e => {
+          e.originalEvent.preventDefault();
+          showMenu(e.originalEvent.clientX, e.originalEvent.clientY, async () => {
+            try {
+              const res = await fetch(`/api/annonces/${a.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nogo: 1 })
+              });
+              if (res.ok) {
+                group.removeLayer(marker);
+                const remaining = group.getLayers().length;
+                document.getElementById('badge').textContent =
+                  remaining + (remaining !== 1 ? ' annonces affichées' : ' annonce affichée');
+              } else {
+                console.error('NoGo PATCH failed:', res.status);
+              }
+            } catch (err) {
+              console.error('NoGo PATCH error:', err);
+            }
+          });
+        });
         group.addLayer(marker);
       });
 
@@ -154,5 +198,9 @@
       }
     });
   </script>
+
+  <div id="ctx-menu" style="display:none; position:fixed; z-index:9999; background:#fff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 2px 8px rgba(0,0,0,0.15); padding:4px 0; min-width:160px;">
+    <button id="ctx-nogo" style="display:block; width:100%; padding:8px 16px; background:none; border:none; text-align:left; cursor:pointer; font-size:14px; color:#dc2626;">🚫 Marquer NoGo</button>
+  </div>
 </body>
 </html>

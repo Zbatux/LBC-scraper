@@ -129,17 +129,7 @@ def scrape_page(page: Page, url: str, is_first_page: bool = False) -> tuple:
     accept_cookies(page, is_first_page=is_first_page)
     human_scroll(page)  # simule lecture + déclenche lazy-loading
 
-    # Attendre les annonces
-    try:
-        page.wait_for_selector(
-            "[data-test-id='aditem_container'], article[data-qa-id], "
-            "[data-testid='ad-card']",
-            timeout=20_000,
-        )
-    except PWTimeout:
-        page.screenshot(path="debug_blocked.png")
-        print("  ⚠ Annonces non trouvées → screenshot: debug_blocked.png")
-
+    # __NEXT_DATA__ est toujours présent (SSR Next.js) — pas besoin d'attendre le DOM hydraté
     data = extract_next_data(page)
     if data:
         ads, total = find_ads_in_next_data(data)
@@ -147,8 +137,17 @@ def scrape_page(page: Page, url: str, is_first_page: bool = False) -> tuple:
             print(f"  ✓ {len(ads)} annonce(s) (via __NEXT_DATA__, total: {total})")
             return ads, total
 
-    # Fallback DOM
-    print("  ⚠ __NEXT_DATA__ vide → extraction DOM...")
+    # Fallback DOM (si __NEXT_DATA__ absent ou vide)
+    print("  ⚠ __NEXT_DATA__ vide → attente DOM + extraction...")
+    try:
+        page.wait_for_selector(
+            "[data-test-id='aditem_container'], article[data-qa-id], "
+            "[data-testid='ad-card'], [data-test-id='big-picture-housing']",
+            timeout=15_000,
+        )
+    except PWTimeout:
+        page.screenshot(path="debug_blocked.png")
+        print("  ⚠ Annonces non trouvées → screenshot: debug_blocked.png")
     return extract_dom_ads(page), 0
 
 

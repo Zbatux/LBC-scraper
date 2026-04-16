@@ -301,16 +301,19 @@
     .plu-btn:disabled { opacity: .5; cursor: not-allowed; }
 
     .comment-btn {
-      padding: 3px 8px; background: #8b5cf6; color: #fff; border: none;
+      padding: 3px 8px; background: #c4b5fd; color: #5b21b6; border: none;
       border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;
-      font-weight: 600;
+      font-weight: 600; transition: background 0.15s, color 0.15s;
     }
-    .comment-btn:hover { background: #7c3aed; }
+    .comment-btn:hover { background: #a78bfa; }
+    .comment-btn:focus-visible { outline: 2px solid #5b21b6; outline-offset: 2px; }
     .comment-btn.has-comment {
-      background: #7c3aed;
-      box-shadow: 0 0 0 2px #c4b5fd;
+      background: #8b5cf6;
+      color: #fff;
+      box-shadow: 0 0 0 2px #7c3aed;
     }
-    .comment-btn.has-comment:hover { background: #6d28d9; }
+    .comment-btn.has-comment:focus-visible { outline: 2px solid #4c1d95; outline-offset: 2px; }
+    .comment-btn.has-comment:hover { background: #7c3aed; }
 
     .comment-textarea {
       width: 100%; min-height: 150px; padding: 10px;
