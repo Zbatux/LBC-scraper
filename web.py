@@ -26,7 +26,7 @@ import plu
 DB_NAME = "lbc_data.db"
 
 # Whitelist des colonnes éditables (protection contre l'injection de nom de colonne)
-EDITABLE_FIELDS = {"note", "nogo", "viabilise", "partiellement_constructible", "partiellement_agricole", "commentaire"}
+EDITABLE_FIELDS = {"note", "nogo", "viabilise", "partiellement_constructible", "partiellement_agricole", "commentaire", "a_visiter"}
 
 app = Flask(__name__)
 
@@ -54,6 +54,7 @@ def ensure_columns():
             "ALTER TABLE annonces ADD COLUMN first_seen TEXT",
             "ALTER TABLE annonces ADD COLUMN date_publication TEXT",
             "ALTER TABLE annonces ADD COLUMN commentaire TEXT",
+            "ALTER TABLE annonces ADD COLUMN a_visiter INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(sql)
@@ -123,7 +124,7 @@ def get_annonces():
             "SELECT a.id, a.titre, a.prix, a.superficie, a.prix_m2, a.trajet, a.lien, "
             "a.viabilise, a.emprise_sol, a.partiellement_constructible, a.partiellement_agricole, "
             "a.analyse_faite, a.nogo, a.note, a.commentaire, a.lat, a.lng, "
-            "a.status, a.first_seen, a.date_publication, "
+            "a.status, a.first_seen, a.date_publication, a.a_visiter, "
             "(SELECT COUNT(*) FROM annonces_history WHERE annonce_id = a.id) AS history_count "
             "FROM annonces a ORDER BY a.id"
         ).fetchall()

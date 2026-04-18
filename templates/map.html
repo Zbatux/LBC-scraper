@@ -119,6 +119,7 @@
       const fConst = parseBoolFilter(params.get('fConstruct'));
       const fAgri  = parseBoolFilter(params.get('fAgricole'));
       const fStatus = params.get('fStatus') || null;
+      const showAVisiter = params.get('showAVisiter') === '1';
 
       let data;
       try {
@@ -147,6 +148,7 @@
         if (!matchBool(fConst, a.partiellement_constructible))                     return;
         if (!matchBool(fAgri,  a.partiellement_agricole))                          return;
         if (fStatus && a.status !== fStatus)                                        return;
+        if (showAVisiter && a.a_visiter !== 1)                                      return;
 
         // Skip listings without coordinates
         if (a.lat == null || a.lng == null) return;

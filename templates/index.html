@@ -54,6 +54,26 @@
     }
     #resetFilters:hover { background: #e2e8f0; }
 
+    /* ── Column picker ───────────────────────────────────────────── */
+    #colPickerWrap { position: relative; }
+    #colPickerBtn {
+      padding: 4px 10px; background: #f1f5f9; border: 1px solid #cbd5e1;
+      border-radius: 4px; cursor: pointer; font-size: 12px;
+    }
+    #colPickerBtn:hover { background: #e2e8f0; }
+    #colPickerPanel {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0;
+      background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 8px 12px;
+      z-index: 200; min-width: 160px;
+    }
+    #colPickerPanel.open { display: block; }
+    .col-pick-label {
+      display: flex; align-items: center; gap: 6px;
+      padding: 3px 0; cursor: pointer; font-size: 12px; white-space: nowrap;
+    }
+    .col-pick-label input { cursor: pointer; }
+
     /* ── Bulk toolbar ────────────────────────────────────────── */
     #toolbar {
       display: none;
@@ -180,6 +200,10 @@
 
     /* nogo badge (same as other boolean columns) */
     .nogo-cell { text-align: center; }
+
+    .avisiter-cell { text-align: center; cursor: pointer; min-width: 32px; }
+    .star-on  { color: #f59e0b; font-size: 18px; }
+    .star-off { color: #94a3b8; font-size: 18px; }
 
     /* row checkbox */
     .sel-cell { text-align: center; width: 32px; }
@@ -358,6 +382,10 @@
     <input type="checkbox" id="hideDeleted" />
     Masquer supprimées
   </label>
+  <label>
+    <input type="checkbox" id="showAVisiter" />
+    À visiter seulement
+  </label>
   <span class="filter-sep">|</span>
   <label>Prix&nbsp;€ <input type="number" id="fPrixMin" placeholder="min" /></label>
   <label>–<input type="number" id="fPrixMax" placeholder="max" /></label>
@@ -407,6 +435,12 @@
       <option value="deleted">Supprimée</option>
     </select>
   </label>
+  <div id="colPickerWrap">
+    <button id="colPickerBtn" type="button">Colonnes ⚙</button>
+    <div id="colPickerPanel">
+      <!-- Rempli dynamiquement par JS -->
+    </div>
+  </div>
   <button id="resetFilters">Réinitialiser</button>
 </div>
 
@@ -447,6 +481,7 @@
         <th class="sortable" data-col="emprise_sol">Emprise&nbsp;%</th>
         <th class="sortable" data-col="note">Note</th>
         <th class="sortable" data-col="nogo">Nogo</th>
+        <th class="sortable" data-col="a_visiter">★</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -501,6 +536,24 @@
   let cmpSortCol = null;
   let cmpSortDir = 1;
   let cmpData = null;
+
+  const TOGGLEABLE_COLS = [
+    { col: 'status',                       label: 'Statut' },
+    { col: 'first_seen',                   label: '1ère vue' },
+    { col: 'date_publication',             label: 'Publié le' },
+    { col: 'prix',                         label: 'Prix €' },
+    { col: 'superficie',                   label: 'Surf. m²' },
+    { col: 'prix_m2',                      label: '€/m²' },
+    { col: 'trajet',                       label: 'Trajet' },
+    { col: 'viabilise',                    label: 'Viabilisé' },
+    { col: 'partiellement_constructible',  label: 'Part. const.' },
+    { col: 'partiellement_agricole',       label: 'Part. agri.' },
+    { col: 'emprise_sol',                  label: 'Emprise %' },
+    { col: 'note',                         label: 'Note' },
+    { col: 'nogo',                         label: 'Nogo' },
+    { col: 'a_visiter',                    label: '★' },
+  ];
+  let colVisibility = {}; // { col: true|false }
 
   // ── Helpers ──────────────────────────────────────────────────
   const fmt = (v, dec = 0) =>
@@ -575,6 +628,7 @@
   function getFiltered() {
     const hideNogo    = document.getElementById("hideNogo").checked;
     const hideDeleted = document.getElementById("hideDeleted").checked;
+    const showAVisiter = document.getElementById("showAVisiter").checked;
     const prixMin    = parseFloat(document.getElementById("fPrixMin").value)   || null;
     const prixMax    = parseFloat(document.getElementById("fPrixMax").value)   || null;
     const surfMin    = parseFloat(document.getElementById("fSurfMin").value)   || null;
@@ -592,6 +646,7 @@
     return allData.filter(a => {
       if (hideNogo && a.nogo === 1) return false;
       if (hideDeleted && a.status === 'deleted') return false;
+      if (showAVisiter && a.a_visiter !== 1) return false;
       if (prixMin  != null && (a.prix       == null || a.prix       < prixMin))  return false;
       if (prixMax  != null && (a.prix       == null || a.prix       > prixMax))  return false;
       if (surfMin  != null && (a.superficie == null || a.superficie < surfMin))  return false;
@@ -638,20 +693,21 @@
 
       tr.innerHTML = `
         <td class="sel-cell"><input type="checkbox" class="row-cb" /></td>
-        <td>${statusBadge(a.status)}</td>
-        <td>${fmtDate(a.first_seen)}</td>
-        <td>${fmtDate(a.date_publication)}</td>
+        <td data-col="status">${statusBadge(a.status)}</td>
+        <td data-col="first_seen">${fmtDate(a.first_seen)}</td>
+        <td data-col="date_publication">${fmtDate(a.date_publication)}</td>
         <td class="titre-cell" title="${escHtml(a.titre || "")}">${a.lien ? `<a href="${escHtml(a.lien)}" target="_blank" rel="noopener">${escHtml(a.titre || "—")}</a>` : escHtml(a.titre || "—")}</td>
-        <td>${a.prix != null ? fmt(a.prix) + "\u00a0€" : "—"}</td>
-        <td>${a.superficie != null ? fmt(a.superficie) + "\u00a0m²" : "—"}</td>
-        <td>${a.prix_m2 != null ? fmt(a.prix_m2, 0) + "\u00a0€/m²" : "—"}</td>
-        <td>${a.trajet || "—"}</td>
-        <td>${badge(a.viabilise)}</td>
-        <td>${badge(a.partiellement_constructible)}</td>
-        <td>${badge(a.partiellement_agricole)}</td>
-        <td>${a.emprise_sol != null ? fmt(a.emprise_sol, 1) + "%" : "—"}</td>
-        <td class="note-cell" data-id="${a.id}">${renderNote(a.note)}</td>
-        <td class="nogo-cell">${badge(a.nogo)}</td>
+        <td data-col="prix">${a.prix != null ? fmt(a.prix) + "\u00a0€" : "—"}</td>
+        <td data-col="superficie">${a.superficie != null ? fmt(a.superficie) + "\u00a0m²" : "—"}</td>
+        <td data-col="prix_m2">${a.prix_m2 != null ? fmt(a.prix_m2, 0) + "\u00a0€/m²" : "—"}</td>
+        <td data-col="trajet">${a.trajet || "—"}</td>
+        <td data-col="viabilise">${badge(a.viabilise)}</td>
+        <td data-col="partiellement_constructible">${badge(a.partiellement_constructible)}</td>
+        <td data-col="partiellement_agricole">${badge(a.partiellement_agricole)}</td>
+        <td data-col="emprise_sol">${a.emprise_sol != null ? fmt(a.emprise_sol, 1) + "%" : "—"}</td>
+        <td data-col="note" class="note-cell" data-id="${a.id}">${renderNote(a.note)}</td>
+        <td data-col="nogo" class="nogo-cell">${badge(a.nogo)}</td>
+        <td data-col="a_visiter" class="avisiter-cell" data-id="${a.id}"><span class="${a.a_visiter === 1 ? 'star-on' : 'star-off'}">${a.a_visiter === 1 ? '★' : '☆'}</span></td>
         <td><button class="comment-btn${a.commentaire ? ' has-comment' : ''}" data-id="${a.id}" aria-label="Commentaire">${String.fromCodePoint(0x1F4AC)}</button> ${a.history_count > 0
           ? `<button class="hist-btn" data-id="${a.id}">📋 ${a.history_count}</button>`
           : ""
@@ -669,6 +725,7 @@
     bindRowEvents();
     updateToolbar();
     saveFilters();
+    applyColVisibility();
   }
 
   // ── Filter persistence ───────────────────────────────────────
@@ -677,6 +734,7 @@
     const state = {
       hideNogo:    document.getElementById("hideNogo").checked,
       hideDeleted: document.getElementById("hideDeleted").checked,
+      showAVisiter: document.getElementById("showAVisiter").checked,
       fPrixMin:    v("fPrixMin"),
       fPrixMax:    v("fPrixMax"),
       fSurfMin:    v("fSurfMin"),
@@ -705,6 +763,7 @@
     const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
     setChk("hideNogo",    state.hideNogo);
     setChk("hideDeleted", state.hideDeleted);
+    setChk("showAVisiter", state.showAVisiter);
     set("fPrixMin",   state.fPrixMin);
     set("fPrixMax",   state.fPrixMax);
     set("fSurfMin",   state.fSurfMin);
@@ -723,6 +782,51 @@
       const th = document.querySelector(`thead th[data-col="${sortCol}"]`);
       if (th) th.classList.add(sortDir === 1 ? "sorted-asc" : "sorted-desc");
     }
+  }
+
+  function saveColVisibility() {
+    try { localStorage.setItem("lbc_col_visibility", JSON.stringify(colVisibility)); } catch { /* quota/private */ }
+  }
+
+  function loadColVisibility() {
+    let raw;
+    try { raw = localStorage.getItem("lbc_col_visibility"); } catch { return; }
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        Object.assign(colVisibility, parsed);
+      }
+    } catch { /* ignore */ }
+  }
+
+  function applyColVisibility() {
+    TOGGLEABLE_COLS.forEach(({ col }) => {
+      const visible = colVisibility[col] !== false; // défaut true
+      const display = visible ? '' : 'none';
+      document.querySelectorAll(`[data-col="${col}"]`).forEach(el => {
+        el.style.display = display;
+      });
+    });
+  }
+
+  function initColPicker() {
+    const panel = document.getElementById('colPickerPanel');
+    panel.innerHTML = TOGGLEABLE_COLS.map(({ col, label }) => `
+      <label class="col-pick-label">
+        <input type="checkbox" class="col-pick-cb" data-col="${col}"
+          ${colVisibility[col] !== false ? 'checked' : ''} />
+        ${label}
+      </label>
+    `).join('');
+
+    panel.querySelectorAll('.col-pick-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        colVisibility[cb.dataset.col] = cb.checked;
+        saveColVisibility();
+        applyColVisibility();
+      });
+    });
   }
 
   function renderNote(note) {
@@ -773,6 +877,35 @@
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         openCommentModal(parseInt(btn.dataset.id));
+      });
+    });
+
+    // Star (à visiter) toggle
+    document.querySelectorAll(".avisiter-cell").forEach(td => {
+      td.addEventListener("click", async () => {
+        const id = parseInt(td.dataset.id);
+        const a = allData.find(x => x.id === id);
+        if (!a) return;
+        const newVal = a.a_visiter === 1 ? 0 : 1;
+        const span = td.querySelector("span");
+        // Optimistic update
+        a.a_visiter = newVal;
+        span.className = newVal === 1 ? 'star-on' : 'star-off';
+        span.textContent = newVal === 1 ? '★' : '☆';
+        try {
+          const res = await fetch(`/api/annonces/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ a_visiter: newVal })
+          });
+          if (!res.ok) throw new Error();
+        } catch {
+          // Revert on error
+          a.a_visiter = newVal === 1 ? 0 : 1;
+          span.className = a.a_visiter === 1 ? 'star-on' : 'star-off';
+          span.textContent = a.a_visiter === 1 ? '★' : '☆';
+        }
+        if (document.getElementById("showAVisiter").checked) render();
       });
     });
 
@@ -1229,7 +1362,7 @@
   // ── Filters ──────────────────────────────────────────────────
   ["hideNogo","hideDeleted","fPrixMin","fPrixMax","fSurfMin","fSurfMax","fPm2Min","fPm2Max","fTrajetMax","fNoteMin"]
     .forEach(id => document.getElementById(id).addEventListener("input", render));
-  ["hideNogo","fViabilise","fConstruct","fAgricole"].forEach(id =>
+  ["hideNogo","fViabilise","fConstruct","fAgricole","showAVisiter"].forEach(id =>
     document.getElementById(id).addEventListener("change", render));
   document.getElementById("hideDeleted").addEventListener("change", () => {
     if (document.getElementById("hideDeleted").checked && document.getElementById("fStatus").value === "deleted") {
@@ -1276,6 +1409,7 @@
     if (v("fConstruct")) p.set("fConstruct", v("fConstruct"));
     if (v("fAgricole"))  p.set("fAgricole",  v("fAgricole"));
     if (v("fStatus"))    p.set("fStatus",    v("fStatus"));
+    if (document.getElementById("showAVisiter").checked) p.set("showAVisiter", "1");
     const qs = p.toString();
     window.open("/map" + (qs ? "?" + qs : ""), "_blank");
   });
@@ -1295,12 +1429,29 @@
   document.getElementById("commentModal").addEventListener("click", function(e) {
     if (e.target === this) closeCommentModal();
   });
+  // ── Column picker ────────────────────────────────────────────
+  document.getElementById('colPickerBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('colPickerPanel').classList.toggle('open');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#colPickerWrap')) {
+      document.getElementById('colPickerPanel').classList.remove('open');
+    }
+  }, true);
+
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { closeHistoryModal(); closeCompareModal(); closeCommentModal(); }
+    if (e.key === "Escape") {
+      closeHistoryModal(); closeCompareModal(); closeCommentModal();
+      document.getElementById('colPickerPanel').classList.remove('open');
+    }
   });
 
   // ── Init ─────────────────────────────────────────────────────
   loadFilters();
+  loadColVisibility();
+  initColPicker();
   loadData();
 </script>
 </body>

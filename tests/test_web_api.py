@@ -255,6 +255,72 @@ def test_get_annonces_history_count_zero_for_no_history(client):
     assert listing["history_count"] == 0
 
 
+# ---------------------------------------------------------------------------
+# Terrain À Visiter Flag: AC2 + AC3
+# ---------------------------------------------------------------------------
+
+def test_get_annonces_includes_a_visiter(client):
+    """AC2: a_visiter key present in GET /api/annonces response, defaults to 0."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    response = c.get("/api/annonces")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert len(data) == 1
+    listing = data[0]
+    assert "a_visiter" in listing
+    assert listing["a_visiter"] == 0  # DEFAULT 0 on fresh insert
+
+
+def test_patch_a_visiter_toggles_value(client):
+    """AC3: PATCH a_visiter=1 persists; subsequent GET reflects change."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    # Get the annonce id
+    get_resp = c.get("/api/annonces")
+    annonce_id = get_resp.get_json()[0]["id"]
+
+    # Patch a_visiter to 1
+    patch_resp = c.patch(
+        f"/api/annonces/{annonce_id}",
+        json={"a_visiter": 1},
+        content_type="application/json",
+    )
+    assert patch_resp.status_code == 200
+
+    # Verify GET reflects the change
+    get_resp2 = c.get("/api/annonces")
+    updated = get_resp2.get_json()[0]
+    assert updated["a_visiter"] == 1
+
+
+def test_patch_a_visiter_toggle_back_to_zero(client):
+    """AC3b: PATCH a_visiter=0 after 1 correctly resets to 0."""
+    c, db_path = client
+    database.save_or_merge([SAMPLE_LISTING.copy()], db_name=db_path)
+
+    get_resp = c.get("/api/annonces")
+    annonce_id = get_resp.get_json()[0]["id"]
+
+    # Set to 1 first
+    c.patch(f"/api/annonces/{annonce_id}", json={"a_visiter": 1}, content_type="application/json")
+
+    # Then reset to 0
+    patch_resp = c.patch(
+        f"/api/annonces/{annonce_id}",
+        json={"a_visiter": 0},
+        content_type="application/json",
+    )
+    assert patch_resp.status_code == 200
+
+    get_resp2 = c.get("/api/annonces")
+    updated = get_resp2.get_json()[0]
+    assert updated["a_visiter"] == 0
+
+
 def test_get_annonces_non_regression_after_history_count_addition(client):
     """Non-regression: all 18 expected fields still present after history_count added."""
     c, db_path = client

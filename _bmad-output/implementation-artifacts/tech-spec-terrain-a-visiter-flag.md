@@ -2,8 +2,8 @@
 title: 'Terrain À Visiter Flag'
 slug: 'terrain-a-visiter-flag'
 created: '2026-04-16'
-status: 'review'
-stepsCompleted: [1, 2, 3]
+status: 'implementation-complete'
+stepsCompleted: [1, 2, 3, 4]
 tech_stack: ['Python 3/Flask', 'SQLite3', 'Vanilla JS (ES2017+)', 'Jinja2 HTML templates', 'pytest']
 files_to_modify: ['database.py', 'web.py', 'templates/index.html']
 code_patterns: ['ALTER TABLE idempotent migration (try/except OperationalError)', 'EDITABLE_FIELDS whitelist auto-validates booleans', 'optimistic UI toggle', 'localStorage filter persistence saveFilters/loadFilters', 'class-based event delegation in bindRowEvents()']
